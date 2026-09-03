@@ -1,0 +1,81 @@
+{
+  "name": "ashes-of-pantheon-qa-tool",
+  "version": "0.1.0",
+  "packageManager": "pnpm@11.25.0",
+  "private": true,
+  "description": "Ashes of Pantheon runtime QA workstation",
+  "author": "yingyu4451",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yingyu4451/Ashes-of-Pantheon-QA-Tool.git"
+  },
+  "main": "./out/main/index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "dev:web": "vite --config vite.web.config.ts",
+    "build": "pnpm run typecheck && electron-vite build",
+    "build:win": "pnpm run build && electron-builder --win nsis",
+    "preview": "electron-vite preview",
+    "typecheck": "vue-tsc --noEmit -p tsconfig.web.json && tsc --noEmit -p tsconfig.node.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9",
+    "gsap": "^3.15.0",
+    "@lucide/vue": "^1.39.0",
+    "pinia": "^4.0.3",
+    "vue": "^3.5.42"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.62.1",
+    "@swc/core": "^1.15.11",
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/node": "^24.10.0",
+    "@vitejs/plugin-vue": "^6.0.8",
+    "@vue/test-utils": "^2.5.0",
+    "electron": "^44.1.1",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^5.0.0",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^5.9.3",
+    "vite": "^7.0.0",
+    "vitest": "^4.1.11",
+    "vue-tsc": "^3.3.11"
+  },
+  "build": {
+    "appId": "com.ashes-of-pantheon.qa-tool",
+    "productName": "Ashes of Pantheon QA Tool",
+    "artifactName": "Ashes-of-Pantheon-QA-Tool-Setup-${version}.${ext}",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "out/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "resources/unity-package/com.ashes-of-pantheon.qa-bridge",
+        "to": "unity-package/com.ashes-of-pantheon.qa-bridge"
+      }
+    ],
+    "win": {
+      "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "yingyu4451",
+        "repo": "Ashes-of-Pantheon-QA-Tool",
+        "releaseType": "release"
+      }
+    ]
+  }
+}

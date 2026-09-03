@@ -1,0 +1,59 @@
+name: Release Windows app
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify tag matches package version
+        shell: pwsh
+        run: |
+          $packageVersion = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          if ($env:GITHUB_REF_NAME -ne "v$packageVersion") {
+            throw "Tag $env:GITHUB_REF_NAME does not match package version $packageVersion."
+          }
+
+      - name: Test
+        run: pnpm test
+
+      - name: Build Windows installer
+        run: pnpm run build:win
+
+      - name: Publish GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $packageVersion = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $installer = "release/Ashes-of-Pantheon-QA-Tool-Setup-$packageVersion.exe"
+          gh release create $env:GITHUB_REF_NAME `
+            $installer `
+            "$installer.blockmap" `
+            "release/latest.yml" `
+            --title "Ashes of Pantheon QA Tool $env:GITHUB_REF_NAME" `
+            --generate-notes `
+            --verify-tag

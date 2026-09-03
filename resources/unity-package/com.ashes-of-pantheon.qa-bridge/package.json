@@ -1,0 +1,10 @@
+{
+  "name": "com.ashes-of-pantheon.qa-bridge",
+  "version": "0.2.1",
+  "displayName": "Ashes of Pantheon QA Editor Bridge",
+  "description": "Editor-only bridge for the Ashes of Pantheon QA Tool. This package is excluded from Player builds.",
+  "unity": "2022.3",
+  "dependencies": {
+    "com.unity.nuget.newtonsoft-json": "3.2.1"
+  }
+}
