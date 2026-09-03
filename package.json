@@ -15,7 +15,7 @@
     "dev": "electron-vite dev",
     "dev:web": "vite --config vite.web.config.ts",
     "build": "pnpm run typecheck && electron-vite build",
-    "build:win": "pnpm run build && electron-builder --win nsis",
+    "build:win": "pnpm run build && electron-builder --win nsis --publish never",
     "preview": "electron-vite preview",
     "typecheck": "vue-tsc --noEmit -p tsconfig.web.json && tsc --noEmit -p tsconfig.node.json",
     "test": "vitest run",

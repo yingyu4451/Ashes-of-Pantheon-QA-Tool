@@ -6,6 +6,7 @@ describe('release contract', () => {
     const packageJson = JSON.parse(await readFile('package.json', 'utf8')) as {
       name: string
       dependencies: Record<string, string>
+      scripts: Record<string, string>
       repository?: { type: string; url: string }
       build: {
         appId: string
@@ -20,6 +21,7 @@ describe('release contract', () => {
     expect(packageJson.build.productName).toBe('Ashes of Pantheon QA Tool')
     expect(packageJson.build.artifactName).toBe('Ashes-of-Pantheon-QA-Tool-Setup-${version}.${ext}')
     expect(packageJson.dependencies['electron-updater']).toBeDefined()
+    expect(packageJson.scripts['build:win']).toContain('--publish never')
     expect(packageJson.repository?.url).toContain('yingyu4451/Ashes-of-Pantheon-QA-Tool')
     expect(packageJson.build.publish).toEqual([{
       provider: 'github',
