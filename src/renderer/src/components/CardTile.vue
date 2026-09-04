@@ -4,7 +4,13 @@ import { Crosshair, Footprints, PackageOpen, Sparkles, Target } from '@lucide/vu
 import type { Component, CSSProperties } from 'vue'
 import type { QaCard } from '@shared/contracts'
 
-const props = defineProps<{ card: QaCard }>()
+const props = defineProps<{
+  card: QaCard
+  ownedCount: number
+  inventoryAvailable: boolean
+  busy?: boolean
+}>()
+const emit = defineEmits<{ obtain: []; remove: [] }>()
 
 const tooltipVisible = ref(false)
 const tooltipPosition = ref({ x: 0, y: 0 })
@@ -49,6 +55,28 @@ const tooltipStyle = computed<CSSProperties>(() => ({
   top: `${Math.min(tooltipPosition.value.y + 18, window.innerHeight - 190)}px`
 }))
 
+const interactionLabel = computed(() => props.card.category === 'equipment'
+  ? '左键前往战斗放置，右键删除战场装备'
+  : '左键获得 1 张，右键删除 1 张')
+
+const cardLabel = computed(() => [
+  props.card.name,
+  rarityLabel[props.card.rarity],
+  `费用 ${props.card.cost}`,
+  props.inventoryAvailable ? `拥有 ${props.ownedCount} 张` : '持有数量不可用',
+  interactionLabel.value
+].join('，'))
+
+function obtainCard(): void {
+  if (!props.inventoryAvailable || props.busy) return
+  emit('obtain')
+}
+
+function removeCard(): void {
+  if (!props.inventoryAvailable || props.busy) return
+  emit('remove')
+}
+
 function beginHover(event: PointerEvent): void {
   tooltipPosition.value = { x: event.clientX, y: event.clientY }
   hoverTimer = setTimeout(() => {
@@ -85,9 +113,17 @@ onBeforeUnmount(endHover)
     <button
       type="button"
       class="relative block aspect-[0.72] w-full min-w-0 overflow-hidden border border-black/70 bg-[#242126] text-left shadow-[0_10px_22px_rgb(0_0_0/0.25)] transition-transform duration-150 hover:-translate-y-0.5 focus-visible:-translate-y-0.5 cut-corner"
-      :aria-label="`${card.name}，${rarityLabel[card.rarity]}，费用 ${card.cost}`"
+      :class="[
+        !inventoryAvailable || busy ? 'cursor-default' : 'cursor-pointer active:scale-[0.99]',
+        inventoryAvailable && card.category === 'equipment' ? 'hover:shadow-[0_10px_26px_rgb(198_164_81/0.16)]' : ''
+      ]"
+      :aria-label="cardLabel"
+      :aria-disabled="!inventoryAvailable || busy"
       @focus="showKeyboardTooltip"
       @blur="endHover"
+      @click="obtainCard"
+      @contextmenu.prevent="removeCard"
+      @keydown.delete.prevent="removeCard"
     >
       <span class="absolute inset-0 bg-no-repeat brightness-[0.68] contrast-[1.08]" :style="frameStyle" aria-hidden="true" />
       <span class="absolute inset-[11%_14%_16%] overflow-hidden bg-[#17161a] shadow-[inset_0_0_20px_rgb(0_0_0/0.65)]" aria-hidden="true">
@@ -113,6 +149,13 @@ onBeforeUnmount(endHover)
         </span>
       </span>
       <span class="absolute inset-0 opacity-0 ring-1 ring-inset ring-[#d6b655] transition-opacity group-hover:opacity-100" aria-hidden="true" />
+      <span
+        v-if="inventoryAvailable && ownedCount > 0"
+        class="absolute right-3 top-3 z-20 grid h-8 min-w-8 place-items-center rounded-full border border-[#e4c968]/75 bg-[#3a241d] px-2 utility-font text-[12px] font-bold tabular-nums text-[#ffe79a] shadow-[0_3px_12px_rgb(0_0_0/0.65)]"
+        aria-hidden="true"
+      >
+        ×{{ ownedCount }}
+      </span>
     </button>
 
     <Teleport to="body">

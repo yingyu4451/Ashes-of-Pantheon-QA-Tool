@@ -47,6 +47,93 @@ namespace AshesOfPantheon.QA.EditorBridge
             };
         }
 
+        public object GetCardInventorySnapshot()
+        {
+            if (!UnityEditor.EditorApplication.isPlaying)
+                return new { available = false, cards = Array.Empty<object>() };
+
+            var inventory = GetSingleton("HappyHotel.Inventory.CardInventory");
+            if (inventory == null)
+                return new { available = false, cards = Array.Empty<object>() };
+
+            RefreshHandDisplay();
+            var cards = GetVisibleHandCards(inventory)
+                .Concat(GetDeployedEquipmentCards())
+                .Distinct()
+                .Where(card => card != null)
+                .Select(ResolveTypeId)
+                .Where(typeId => !string.IsNullOrWhiteSpace(typeId))
+                .GroupBy(typeId => typeId, StringComparer.Ordinal)
+                .Select(group => new { typeId = group.Key, count = group.Count() })
+                .OrderBy(card => card.typeId, StringComparer.Ordinal)
+                .ToList();
+            return new { available = true, cards };
+        }
+
+        public object AddOwnedCard(JObject request)
+        {
+            if (!UnityEditor.EditorApplication.isPlaying) return Failure("请先进入 Play Mode。");
+            var typeIdText = request.Value<string>("typeId");
+            var inventory = GetSingleton("HappyHotel.Inventory.CardInventory");
+            var registry = GetSingleton("HappyHotel.Card.CardRegistry");
+            var drawManager = GetSingleton("HappyHotel.Inventory.CardDrawManager");
+            var cardManager = GetSingleton("HappyHotel.Card.CardManager");
+            if (inventory == null || registry == null || drawManager == null || cardManager == null)
+                return Failure("手牌模块尚未初始化。");
+            Invoke(registry, "Initialize");
+            var typeId = Invoke(registry, "GetType", typeIdText);
+            if (typeId == null) return Failure($"未注册的卡牌 TypeId：{typeIdText}");
+            var card = GetCardFromZone(inventory, typeId, "Deck") ?? GetCardFromZone(inventory, typeId, "Discard");
+            var created = false;
+            if (card == null)
+            {
+                if (!(Invoke(inventory, "AddCard", typeId, null) is bool added) || !added)
+                    return Failure($"无法创建卡牌：{typeIdText}");
+                created = true;
+                card = GetCardFromZone(inventory, typeId, "Deck");
+            }
+            if (card == null || !(Invoke(drawManager, "DrawCard", card) is bool drawn) || !drawn)
+            {
+                if (created && card != null && Invoke(inventory, "RemoveCard", card) is bool removed && removed)
+                    ReleaseCardInstance(cardManager, card);
+                return Failure($"无法将卡牌加入手牌：{typeIdText}");
+            }
+            return Success($"已加入手牌：{typeIdText}");
+        }
+
+        public object RemoveOwnedCard(JObject request)
+        {
+            if (!UnityEditor.EditorApplication.isPlaying) return Failure("请先进入 Play Mode。");
+            var typeIdText = request.Value<string>("typeId");
+            var inventory = GetSingleton("HappyHotel.Inventory.CardInventory");
+            var cardManager = GetSingleton("HappyHotel.Card.CardManager");
+            if (inventory == null || cardManager == null) return Failure("卡牌库存尚未初始化。");
+            var deploymentService = GetSingleton("HappyHotel.Inventory.EquipmentCardDeploymentService");
+            foreach (var card in GetDeployedEquipmentCards().Where(card => string.Equals(ResolveTypeId(card), typeIdText, StringComparison.Ordinal)))
+            {
+                if (!TryGetEquipmentBinding(deploymentService, card, out var prop)) continue;
+                var propController = GetSingleton("HappyHotel.Prop.PropController");
+                var reasonType = FindType("HappyHotel.Prop.PropRemovalReason");
+                if (propController == null || reasonType == null || prop == null)
+                    return Failure("场上装备的移除模块不可用。");
+                var isTemporary = Invoke(deploymentService, "IsTemporary", card) is bool temporary && temporary;
+                var removed = Invoke(propController, "RemoveProp", prop, Enum.Parse(reasonType, "RunReset"));
+                if (!(removed is bool removedValue) || !removedValue)
+                    return Failure($"无法删除场上装备：{typeIdText}");
+                if (!isTemporary) ReleaseCardInstance(cardManager, card);
+                return Success($"已删除场上装备：{typeIdText}");
+            }
+
+            var target = GetVisibleHandCards(inventory)
+                .FirstOrDefault(card => string.Equals(ResolveTypeId(card), typeIdText, StringComparison.Ordinal));
+            if (target == null) return Failure($"手牌中没有可删除的卡牌：{typeIdText}");
+            if (!(Invoke(inventory, "RemoveCard", target) is bool removedCard) || !removedCard)
+                return Failure($"无法从手牌删除卡牌：{typeIdText}");
+            ReleaseCardInstance(cardManager, target);
+            RefreshHandDisplay();
+            return Success($"已从手牌删除卡牌：{typeIdText}");
+        }
+
         public object GetBattleSnapshot()
         {
             if (!UnityEditor.EditorApplication.isPlaying)
@@ -531,6 +618,11 @@ namespace AshesOfPantheon.QA.EditorBridge
                 var registeredType = Invoke(registry, "GetType", typeId);
                 var entry = registeredType == null ? null : Invoke(registry, "GetIndexEntry", registeredType);
                 var template = ReadMember<object>(entry, "TemplateObject") ?? ReadMember<object>(entry, "template");
+                if (template == null && registeredType != null)
+                {
+                    var resourceManager = Invoke(GetSingleton(registryTypeName.Replace("Registry", "Manager")), "GetResourceManager");
+                    template = Invoke(resourceManager, "GetTemplate", registeredType);
+                }
                 var name = ResolveTemplateText(template, localizedNameField, "ItemNames", "Name", typeId);
                 var description = ResolveTemplateText(template, "descriptionLocalized", "ItemDescriptions", "Description", typeId);
                 return new RegistryEntryDto
@@ -709,6 +801,65 @@ namespace AshesOfPantheon.QA.EditorBridge
         private static object Failure(string message)
         {
             return new { success = false, message };
+        }
+
+        private static bool TryGetEquipmentBinding(object deploymentService, object card, out object prop)
+        {
+            prop = null;
+            if (deploymentService == null || card == null) return false;
+            var method = deploymentService.GetType().GetMethods(BindingFlags.Public | BindingFlags.Instance)
+                .FirstOrDefault(candidate => candidate.Name == "TryGetBinding" &&
+                                             candidate.GetParameters().Length == 3 &&
+                                             candidate.GetParameters()[0].ParameterType.IsInstanceOfType(card));
+            if (method == null) return false;
+            var arguments = new[] { card, null, null };
+            var result = method.Invoke(deploymentService, arguments);
+            prop = arguments[2];
+            return result is bool found && found && prop != null;
+        }
+
+        private static List<object> GetVisibleHandCards(object inventory)
+        {
+            var handZone = GetCardZone("Hand");
+            if (inventory == null || handZone == null) return new List<object>();
+            var temporaryCards = Enumerate(Invoke(inventory, "GetTemporaryCards")).ToList();
+            return Enumerate(Invoke(inventory, "GetCardsInZone", handZone))
+                .Where(card => card != null && !temporaryCards.Any(temporary => ReferenceEquals(temporary, card)))
+                .Distinct()
+                .ToList();
+        }
+
+        private static List<object> GetDeployedEquipmentCards()
+        {
+            return Enumerate(Invoke(GetSingleton("HappyHotel.Inventory.EquipmentCardDeploymentService"), "GetBoundCards"))
+                .Where(card => card != null)
+                .Distinct()
+                .ToList();
+        }
+
+        private static object GetCardFromZone(object inventory, object typeId, string zoneName)
+        {
+            var zone = GetCardZone(zoneName);
+            return zone == null ? null : Invoke(inventory, "GetCardByTypeId", typeId, zone);
+        }
+
+        private static object GetCardZone(string zoneName)
+        {
+            var inventoryType = FindType("HappyHotel.Inventory.CardInventory");
+            var zoneType = inventoryType?.GetNestedType("CardZone", BindingFlags.Public);
+            return zoneType == null ? null : Enum.Parse(zoneType, zoneName);
+        }
+
+        private static void RefreshHandDisplay()
+        {
+            Invoke(GetSingleton("HappyHotel.HandFan.HandCardPanel"), "RefreshDisplay");
+        }
+
+        private static void ReleaseCardInstance(object cardManager, object card)
+        {
+            if (card == null) return;
+            Invoke(cardManager, "Remove", card);
+            Invoke(card, "Dispose");
         }
 
         private static string Humanize(string value)

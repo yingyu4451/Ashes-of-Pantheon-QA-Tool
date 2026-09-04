@@ -2,17 +2,20 @@
 import { onMounted, onUnmounted, ref, watch } from 'vue'
 import { Cable, Download, FolderOpen, PackageCheck, Play, RefreshCw, RotateCcw, Trash2 } from '@lucide/vue'
 import { useQaStore } from '@/stores/qa'
-import type { BridgeInstance, GameBuildInspection, UnityProjectInspection, UpdatePhase } from '@shared/contracts'
+import type { BridgeInstance, GameBuildInspection, PackageBridgeInspection, UnityProjectInspection, UpdatePhase } from '@shared/contracts'
 
 const store = useQaStore()
 const projectInspection = ref<UnityProjectInspection | null>(null)
 const buildInspection = ref<GameBuildInspection | null>(null)
+const packageBridgeInspection = ref<PackageBridgeInspection | null>(null)
 const instances = ref<BridgeInstance[]>([])
 const busy = ref(false)
 const connectingInstanceId = ref('')
 const refreshingInstances = ref(false)
+const packageBridgeBusy = ref(false)
 const statusMessage = ref('')
 let instanceRefreshTimer: ReturnType<typeof setInterval> | undefined
+let buildInspectionRevision = 0
 const updatePhaseLabels: Record<UpdatePhase, string> = {
   disabled: '开发模式',
   idle: '待检查',
@@ -82,12 +85,60 @@ async function selectBuild(): Promise<void> {
   }
   const path = await window.qaNative.selectDirectory('选择游戏包目录')
   if (!path) return
-  buildInspection.value = await window.qaNative.inspectGameBuild(path)
-  if (buildInspection.value.valid) {
-    const saved = await store.rememberPaths({ gameBuildPath: buildInspection.value.path })
+  const revision = ++buildInspectionRevision
+  buildInspection.value = null
+  packageBridgeInspection.value = null
+  const inspection = await window.qaNative.inspectGameBuild(path)
+  if (revision !== buildInspectionRevision) return
+  buildInspection.value = inspection
+  if (inspection.valid) {
+    const saved = await store.rememberPaths({ gameBuildPath: inspection.path })
     store.showNotice(saved.ok ? '游戏包路径已保存。' : saved.message, saved.ok ? 'success' : 'error')
   } else {
-    store.showNotice(buildInspection.value.message, 'error')
+    store.showNotice(inspection.message, 'error')
+  }
+}
+
+async function installPackageBridge(): Promise<void> {
+  if (!window.qaNative || !store.gameBuildPath) return
+  packageBridgeBusy.value = true
+  try {
+    const result = await window.qaNative.preparePackageBridge(store.gameBuildPath)
+    if (result.data) packageBridgeInspection.value = result.data
+    store.showNotice(result.message, result.ok ? 'success' : 'error')
+  } catch (error) {
+    store.showNotice(error instanceof Error ? error.message : '打包版 Bridge 安装失败。', 'error')
+  } finally {
+    packageBridgeBusy.value = false
+  }
+}
+
+async function launchPackageBridge(): Promise<void> {
+  if (!window.qaNative || !store.gameBuildPath) return
+  packageBridgeBusy.value = true
+  try {
+    const result = await window.qaNative.launchPackageBridge(store.gameBuildPath)
+    if (result.data) packageBridgeInspection.value = result.data
+    store.showNotice(result.message, result.ok ? 'success' : 'error')
+  } catch (error) {
+    store.showNotice(error instanceof Error ? error.message : '临时游戏副本启动失败。', 'error')
+  } finally {
+    packageBridgeBusy.value = false
+  }
+}
+
+async function removePackageBridge(): Promise<void> {
+  if (!window.qaNative || !store.gameBuildPath) return
+  if (!window.confirm('移除打包游戏的临时 Bridge 副本？原始游戏包不会被删除。')) return
+  packageBridgeBusy.value = true
+  try {
+    const result = await window.qaNative.removePackageBridge(store.gameBuildPath)
+    packageBridgeInspection.value = await window.qaNative.inspectPackageBridge(store.gameBuildPath)
+    store.showNotice(result.message, result.ok ? 'success' : 'error')
+  } catch (error) {
+    store.showNotice(error instanceof Error ? error.message : '临时 Bridge 移除失败。请先关闭由 QA 工具启动的游戏。', 'error')
+  } finally {
+    packageBridgeBusy.value = false
   }
 }
 
@@ -126,7 +177,19 @@ watch(() => store.unityProjectPath, async (path) => {
 }, { immediate: true })
 
 watch(() => store.gameBuildPath, async (path) => {
-  buildInspection.value = path && window.qaNative ? await window.qaNative.inspectGameBuild(path) : null
+  const revision = ++buildInspectionRevision
+  buildInspection.value = null
+  packageBridgeInspection.value = null
+  if (!path || !window.qaNative) return
+
+  const nextBuildInspection = await window.qaNative.inspectGameBuild(path)
+  if (revision !== buildInspectionRevision || store.gameBuildPath !== path) return
+  buildInspection.value = nextBuildInspection
+  if (!nextBuildInspection.valid) return
+
+  const nextBridgeInspection = await window.qaNative.inspectPackageBridge(path)
+  if (revision !== buildInspectionRevision || store.gameBuildPath !== path) return
+  packageBridgeInspection.value = nextBridgeInspection
 }, { immediate: true })
 
 onUnmounted(() => {
@@ -185,9 +248,43 @@ onUnmounted(() => {
             <span v-if="buildInspection.backend" class="border border-[#7167a8]/40 bg-[#7167a8]/10 px-2 py-1 utility-font text-[9px] uppercase text-[#b8afe5]">{{ buildInspection.backend }}</span>
             <span v-if="buildInspection.executablePath" class="min-w-0 truncate utility-font text-white/28">{{ buildInspection.executablePath }}</span>
           </div>
-          <button type="button" class="primary-button" disabled title="读取实际游戏包后启用加载器">
-            <Play :size="14" aria-hidden="true" />等待包适配
-          </button>
+          <div v-if="packageBridgeInspection" class="min-w-0 border border-white/10 bg-white/[0.025] px-3 py-2 text-[11px]" :class="packageBridgeInspection.prepared ? 'text-[#67b49e]' : 'text-[#d5b75f]'">
+            <p class="m-0">{{ packageBridgeInspection.message }}</p>
+            <p v-if="packageBridgeInspection.prepared && packageBridgeInspection.temporaryPath" class="utility-font m-0 mt-1 truncate text-[9px] text-white/32" :title="packageBridgeInspection.temporaryPath">
+              临时副本 <span translate="no">{{ packageBridgeInspection.temporaryPath }}</span>
+            </p>
+          </div>
+          <div class="flex flex-wrap gap-2">
+            <button
+              v-if="!packageBridgeInspection?.prepared"
+              type="button"
+              class="primary-button"
+              :disabled="packageBridgeBusy || !buildInspection?.valid || buildInspection.backend !== 'mono'"
+              @click="installPackageBridge"
+            >
+              <RefreshCw v-if="packageBridgeBusy" :size="14" class="animate-spin" aria-hidden="true" />
+              <PackageCheck v-else :size="14" aria-hidden="true" />
+              {{ packageBridgeBusy ? '安装中…' : '安装打包版 Bridge' }}
+            </button>
+            <button
+              v-else
+              type="button"
+              class="primary-button"
+              :disabled="packageBridgeBusy"
+              @click="launchPackageBridge"
+            >
+              <Play :size="14" aria-hidden="true" />{{ packageBridgeBusy ? '启动中…' : '从临时副本启动' }}
+            </button>
+            <button
+              v-if="packageBridgeInspection?.prepared"
+              type="button"
+              class="secondary-button"
+              :disabled="packageBridgeBusy"
+              @click="removePackageBridge"
+            >
+              <Trash2 :size="14" aria-hidden="true" />移除临时 Bridge
+            </button>
+          </div>
         </div>
       </section>
 

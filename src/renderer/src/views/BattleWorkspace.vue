@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { Box, Cable, Crosshair, PackageOpen, Shield, Skull, UserRound } from '@lucide/vue'
 import EntityInspector from '@/components/EntityInspector.vue'
 import { useQaStore } from '@/stores/qa'
@@ -7,6 +7,8 @@ import type { GridPoint, QaEntity } from '@shared/contracts'
 
 const store = useQaStore()
 const placementMessage = ref('')
+const gridViewport = ref<HTMLElement | null>(null)
+const gridCellSize = ref(0)
 
 const minX = computed(() => -Math.floor(store.battle.width / 2))
 const maxY = computed(() => Math.floor((store.battle.height - 1) / 2))
@@ -18,6 +20,41 @@ const cells = computed<GridPoint[]>(() => {
     }
   }
   return result
+})
+
+const gridStyle = computed(() => ({
+  gridTemplateColumns: `repeat(${store.battle.width}, ${gridCellSize.value}px)`,
+  gridTemplateRows: `repeat(${store.battle.height}, ${gridCellSize.value}px)`,
+  width: `${store.battle.width * gridCellSize.value}px`,
+  height: `${store.battle.height * gridCellSize.value}px`
+}))
+
+function updateGridCellSize(): void {
+  const viewport = gridViewport.value
+  if (!viewport || store.battle.width <= 0 || store.battle.height <= 0) return
+  const availableWidth = Math.max(0, viewport.clientWidth - 40 - 16)
+  const availableHeight = Math.max(0, viewport.clientHeight - 40 - 16)
+  gridCellSize.value = Math.max(32, Math.floor(Math.min(
+    availableWidth / store.battle.width,
+    availableHeight / store.battle.height,
+    72
+  )))
+}
+
+let gridResizeObserver: ResizeObserver | undefined
+
+onMounted(() => {
+  updateGridCellSize()
+  if (!gridViewport.value) return
+  gridResizeObserver = new ResizeObserver(updateGridCellSize)
+  gridResizeObserver.observe(gridViewport.value)
+})
+
+onUnmounted(() => gridResizeObserver?.disconnect())
+
+watch(() => [store.battle.width, store.battle.height], async () => {
+  await nextTick()
+  updateGridCellSize()
 })
 
 const allEntities = computed<QaEntity[]>(() => [
@@ -113,12 +150,13 @@ async function placeEquipment(): Promise<void> {
         <span class="flex items-center gap-2"><Crosshair :size="13" aria-hidden="true" /> 选中格 {{ store.selectedCell ? `${store.selectedCell.x}, ${store.selectedCell.y}` : '—' }}</span>
       </div>
 
-      <div class="flex min-h-0 flex-1 items-center justify-center overflow-auto p-5">
-        <div class="relative aspect-square w-full max-w-[680px] min-w-0 border border-[#c6a451]/28 bg-[#7b5e36] p-2 shadow-[0_24px_80px_rgb(0_0_0/0.38)] cut-corner">
+      <div ref="gridViewport" class="flex min-h-0 flex-1 items-center justify-center overflow-auto p-5">
+        <div class="relative shrink-0 border border-[#c6a451]/28 bg-[#7b5e36] p-2 shadow-[0_24px_80px_rgb(0_0_0/0.38)] cut-corner">
           <div class="absolute inset-0 opacity-35 [background-image:radial-gradient(circle_at_30%_20%,#d4a95f_0,transparent_34%),linear-gradient(125deg,transparent_0_47%,rgb(40_24_24/.28)_48%_52%,transparent_53%)]" aria-hidden="true" />
           <div
-            class="relative grid h-full w-full border-l border-t border-[#2f2019]/55"
-            :style="{ gridTemplateColumns: `repeat(${store.battle.width}, minmax(0, 1fr))`, gridTemplateRows: `repeat(${store.battle.height}, minmax(0, 1fr))` }"
+            data-testid="battle-grid"
+            class="relative grid border-l border-t border-[#2f2019]/55"
+            :style="gridStyle"
           >
             <div
               v-for="cell in cells"

@@ -1,10 +1,41 @@
 <script setup lang="ts">
+import { ref } from 'vue'
 import { ArrowDownAZ, ArrowUpAZ, Search, X } from '@lucide/vue'
 import CardTile from '@/components/CardTile.vue'
 import { useQaStore } from '@/stores/qa'
-import type { CardCategory, Rarity } from '@shared/contracts'
+import type { CardCategory, QaCard, Rarity } from '@shared/contracts'
 
 const store = useQaStore()
+const pendingCardTypeId = ref('')
+
+async function obtainCard(card: QaCard): Promise<void> {
+  if (card.category === 'equipment') {
+    store.selectedEquipmentTypeId = card.typeId
+    store.activeWorkspace = 'battle'
+    store.showNotice(
+      store.runtimeReady
+        ? `已选择装备“${card.name}”，请在地图上选择格子后放置。`
+        : `已选择装备“${card.name}”，进入战斗并加载地图后即可放置。`,
+      'info'
+    )
+    return
+  }
+  pendingCardTypeId.value = card.typeId
+  try {
+    await store.addOwnedCard(card.typeId)
+  } finally {
+    pendingCardTypeId.value = ''
+  }
+}
+
+async function removeCard(card: QaCard): Promise<void> {
+  pendingCardTypeId.value = card.typeId
+  try {
+    await store.removeOwnedCard(card.typeId)
+  } finally {
+    pendingCardTypeId.value = ''
+  }
+}
 
 const categories: Array<{ value: CardCategory; label: string }> = [
   { value: 'equipment', label: '装备' },
@@ -91,10 +122,20 @@ const rarities: Array<{ value: Rarity; label: string }> = [
       <div class="mb-4 flex items-center justify-between text-[11px] text-white/35">
         <span>显示 {{ store.filteredCards.length }} / {{ store.catalog.cards.length }}</span>
         <span v-if="store.connectionStatus !== 'connected'">离线目录</span>
+        <span v-else-if="!store.cardInventoryAvailable">当前场景没有可用的卡牌库存</span>
       </div>
 
       <div v-if="store.filteredCards.length" class="grid grid-cols-[repeat(auto-fill,minmax(166px,1fr))] gap-x-4 gap-y-5 pb-8">
-        <CardTile v-for="card in store.filteredCards" :key="card.typeId" :card="card" />
+        <CardTile
+          v-for="card in store.filteredCards"
+          :key="card.typeId"
+          :card="card"
+          :owned-count="store.ownedCardCounts[card.typeId] ?? 0"
+          :inventory-available="store.connectionStatus === 'connected' && store.cardInventoryAvailable"
+          :busy="pendingCardTypeId === card.typeId"
+          @obtain="obtainCard(card)"
+          @remove="removeCard(card)"
+        />
       </div>
       <div v-else-if="store.catalog.cards.length === 0" class="grid h-56 place-items-center border border-dashed border-white/12 text-center">
         <div>

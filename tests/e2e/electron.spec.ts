@@ -5,9 +5,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 test('native preload exposes directory selection and hides demo catalog', async () => {
+  const userDataRoot = await mkdtemp(join(tmpdir(), 'ashes-qa-native-'))
   const app = await electron.launch({
     args: ['out/main/index.js'],
-    cwd: process.cwd()
+    cwd: process.cwd(),
+    env: { ...process.env, ASHES_OF_PANTHEON_QA_USER_DATA_DIR: userDataRoot }
   })
 
   try {
@@ -56,6 +58,7 @@ test('native preload exposes directory selection and hides demo catalog', async 
     await expect(page.getByRole('button', { name: '前往连接' })).toBeVisible()
   } finally {
     await app.close()
+    await rm(userDataRoot, { recursive: true, force: true })
   }
 })
 
@@ -153,6 +156,83 @@ test('selected paths persist across Electron restarts', async () => {
   }
 })
 
+test('packaged game requires an external Bridge in a temporary copy', async () => {
+  const buildRoot = await mkdtemp(join(tmpdir(), 'ashes-package-build-'))
+  const userDataRoot = await mkdtemp(join(tmpdir(), 'ashes-package-bridge-'))
+  const executableName = 'Ashes of Pantheon.exe'
+  await mkdir(join(buildRoot, 'Ashes of Pantheon_Data', 'Managed'), { recursive: true })
+  await mkdir(join(buildRoot, 'MonoBleedingEdge'))
+  await writeFile(join(buildRoot, executableName), 'test executable', 'utf8')
+  await writeFile(join(buildRoot, 'UnityPlayer.dll'), 'test unity player', 'utf8')
+  await writeFile(join(buildRoot, 'Ashes of Pantheon_Data', 'Managed', 'HappyHotel.dll'), 'test assembly', 'utf8')
+  await writeFile(join(userDataRoot, 'preferences.json'), JSON.stringify({
+    unityProjectPath: '',
+    gameBuildPath: buildRoot
+  }), 'utf8')
+
+  const app = await electron.launch({
+    args: ['out/main/index.js'],
+    cwd: process.cwd(),
+    env: { ...process.env, ASHES_OF_PANTHEON_QA_USER_DATA_DIR: userDataRoot }
+  })
+  try {
+    const page = await app.firstWindow()
+    const before = await page.evaluate((path) => window.qaNative!.inspectPackageBridge(path), buildRoot)
+    expect(before).toMatchObject({ sourcePath: buildRoot, prepared: false, backend: 'mono' })
+    await expect(page.getByText('此游戏包尚未创建临时 Bridge 副本。原始游戏包不会被修改。')).toBeVisible()
+    await expect(page.getByRole('button', { name: '安装打包版 Bridge' })).toBeVisible()
+
+    const launchBeforeInstall = await page.evaluate((path) => window.qaNative!.launchPackageBridge(path), buildRoot)
+    expect(launchBeforeInstall).toMatchObject({
+      ok: false,
+      message: '请先安装打包版 Bridge，再从临时副本启动游戏。',
+      data: { sourcePath: buildRoot, prepared: false, backend: 'mono' }
+    })
+    await expect(access(join(buildRoot, 'winhttp.dll'))).rejects.toThrow()
+
+    await page.getByRole('button', { name: '安装打包版 Bridge' }).click()
+    const packageRegion = page.getByRole('region', { name: '打包游戏' })
+    await expect(packageRegion.getByText('此游戏包的临时 Bridge 副本已准备；原始游戏包未修改。')).toBeVisible()
+    const prepared = await page.evaluate((path) => window.qaNative!.inspectPackageBridge(path), buildRoot)
+    expect(prepared).toMatchObject({ sourcePath: buildRoot, prepared: true, backend: 'mono' })
+    expect(prepared.temporaryPath).not.toBe(buildRoot)
+    await expect(packageRegion.getByText(prepared.temporaryPath!, { exact: false })).toBeVisible()
+    await expect(access(join(buildRoot, 'winhttp.dll'))).rejects.toThrow()
+    await access(join(prepared.temporaryPath!, 'winhttp.dll'))
+    await access(join(prepared.temporaryPath!, 'BepInEx', 'plugins', 'AshesOfPantheon.QA.PackageBridge.dll'))
+
+    const pluginSource = await readFile(join(process.cwd(), 'resources', 'package-bridge', 'plugin-src', 'AshesOfPantheonPackageBridge.cs'), 'utf8')
+    expect(pluginSource).toContain('path == "/api/player"')
+    expect(pluginSource).toContain('path == "/api/enemy"')
+    expect(pluginSource).toContain('path == "/api/buffs"')
+    expect(pluginSource).toContain('path == "/api/blessings"')
+    expect(pluginSource).toContain('path == "/api/intents"')
+    expect(pluginSource).toContain('HappyHotel.Core.Localization.LocalizedStringResolver')
+
+    await writeFile(join(prepared.temporaryPath!, 'BepInEx', 'plugins', 'AshesOfPantheon.QA.PackageBridge.dll'), 'outdated bridge', 'utf8')
+    const outdated = await page.evaluate((path) => window.qaNative!.inspectPackageBridge(path), buildRoot)
+    expect(outdated).toMatchObject({
+      sourcePath: buildRoot,
+      prepared: false,
+      backend: 'mono',
+      message: '此游戏包的临时 Bridge 副本需要更新。原始游戏包不会被修改。'
+    })
+
+    const refreshed = await page.evaluate((path) => window.qaNative!.preparePackageBridge(path), buildRoot)
+    expect(refreshed.ok).toBe(true)
+
+    const removed = await page.evaluate((path) => window.qaNative!.removePackageBridge(path), buildRoot)
+    expect(removed.ok).toBe(true)
+    await expect(access(prepared.temporaryPath!)).rejects.toThrow()
+    await access(join(buildRoot, executableName))
+    await access(join(buildRoot, 'Ashes of Pantheon_Data', 'Managed', 'HappyHotel.dll'))
+  } finally {
+    await app.close()
+    await rm(buildRoot, { recursive: true, force: true })
+    await rm(userDataRoot, { recursive: true, force: true })
+  }
+})
+
 test('connection shows persistent success feedback and opens the available workspace', async () => {
   const localAppData = await mkdtemp(join(tmpdir(), 'ashes-qa-instances-'))
   const userDataRoot = await mkdtemp(join(tmpdir(), 'ashes-qa-session-'))
@@ -170,7 +250,9 @@ test('connection shows persistent success feedback and opens the available works
       ? { cards: [{ typeId: 'Card1', name: '测试卡牌', description: '测试描述', category: 'effect', cost: 1, rarity: 'common', tags: [] }], equipment: [], buffs: [], blessings: [], intents: [] }
       : request.url === '/api/battle'
         ? { available: false, sceneName: 'MainMenu', mapName: '', width: 0, height: 0, turn: 0, phase: 'editor-edit', player: null, entities: [] }
-        : { ready: true, mode: 'editor-edit', sceneName: 'MainMenu' }
+        : request.url === '/api/cards'
+          ? { available: false, cards: [] }
+          : { ready: true, mode: 'editor-edit', sceneName: 'MainMenu' }
     const send = () => response.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify(body))
     if (request.url === '/api/status') setTimeout(send, 250)
     else send()

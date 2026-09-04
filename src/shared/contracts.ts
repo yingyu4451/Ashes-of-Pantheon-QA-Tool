@@ -92,6 +92,11 @@ export interface QaCatalog {
   intents: Array<{ typeId: string; name: string; description: string; parameters: string[] }>
 }
 
+export interface QaCardInventorySnapshot {
+  available: boolean
+  cards: Array<{ typeId: string; count: number }>
+}
+
 export interface UnityProjectInspection {
   path: string
   valid: boolean
@@ -106,6 +111,15 @@ export interface GameBuildInspection {
   executablePath?: string
   backend?: 'mono' | 'il2cpp' | 'unknown'
   dataPath?: string
+  message: string
+}
+
+export interface PackageBridgeInspection {
+  sourcePath: string
+  prepared: boolean
+  temporaryPath?: string
+  executablePath?: string
+  backend?: 'mono' | 'il2cpp' | 'unknown'
   message: string
 }
 
@@ -155,6 +169,10 @@ export interface QaNativeApi {
   installEditorBridge: (projectPath: string) => Promise<OperationResult>
   uninstallEditorBridge: (projectPath: string) => Promise<OperationResult>
   inspectGameBuild: (buildPath: string) => Promise<GameBuildInspection>
+  inspectPackageBridge: (buildPath: string) => Promise<PackageBridgeInspection>
+  preparePackageBridge: (buildPath: string) => Promise<OperationResult<PackageBridgeInspection>>
+  launchPackageBridge: (buildPath: string) => Promise<OperationResult<PackageBridgeInspection>>
+  removePackageBridge: (buildPath: string) => Promise<OperationResult>
   listBridgeInstances: () => Promise<BridgeInstance[]>
   connectBridge: (instanceId: string) => Promise<OperationResult<BridgeInstance>>
   requestBridge: <T>(request: BridgeRequest) => Promise<OperationResult<T>>

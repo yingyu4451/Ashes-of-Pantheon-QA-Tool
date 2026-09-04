@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import type { Component } from 'vue'
 import gsap from 'gsap'
 import AppRail from '@/components/AppRail.vue'
@@ -24,6 +24,15 @@ const workspaceComponents: Record<WorkspaceId, Component> = {
 
 const activeComponent = computed(() => workspaceComponents[store.activeWorkspace])
 
+function selectWorkspace(workspace: WorkspaceId): void {
+  store.activeWorkspace = workspace
+  void store.refreshRuntime(false)
+}
+
+function refreshOnWindowFocus(): void {
+  void store.refreshRuntime(false)
+}
+
 watch(() => store.activeWorkspace, async () => {
   await nextTick()
   if (!workspaceRoot.value || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
@@ -31,14 +40,19 @@ watch(() => store.activeWorkspace, async () => {
 })
 
 onMounted(() => {
+  window.addEventListener('focus', refreshOnWindowFocus)
   void store.initialize()
+})
+
+onUnmounted(() => {
+  window.removeEventListener('focus', refreshOnWindowFocus)
 })
 </script>
 
 <template>
   <div class="flex h-screen min-h-0 min-w-0 overflow-hidden bg-[#121112] text-[#e8e2d7]">
     <a href="#main-workspace" class="skip-link">跳到主工作区</a>
-    <AppRail :active="store.activeWorkspace" @select="store.activeWorkspace = $event" />
+    <AppRail :active="store.activeWorkspace" @select="selectWorkspace" />
 
     <div class="flex min-w-0 flex-1 flex-col max-[640px]:pb-[64px]">
       <ConnectionBar

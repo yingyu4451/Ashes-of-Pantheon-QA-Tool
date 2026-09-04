@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs'
 import { access, cp, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { join, normalize, relative, resolve } from 'node:path'
 import { app, dialog, ipcMain } from 'electron'
+import { createPackageBridgeManager } from './packageBridge.js'
 import type {
   BridgeInstance,
   BridgeRequest,
@@ -32,6 +33,13 @@ function resolveBundledBridgePath(): string {
         join(app.getAppPath(), 'resources', 'unity-package', bridgePackageName)
       ]
   return candidates.find((candidate) => existsSync(join(candidate, 'package.json'))) ?? candidates[0]!
+}
+
+function resolvePackageBridgeResourcePath(): string {
+  const candidates = app.isPackaged
+    ? [join(process.resourcesPath, 'package-bridge')]
+    : [join(process.cwd(), 'resources', 'package-bridge'), join(app.getAppPath(), 'resources', 'package-bridge')]
+  return candidates.find((candidate) => existsSync(join(candidate, 'bepinex-win-x64', 'winhttp.dll'))) ?? candidates[0]!
 }
 
 async function assertUnityProject(projectPath: string): Promise<string> {
@@ -274,6 +282,11 @@ async function writePreferences(preferences: QaPreferences): Promise<OperationRe
 }
 
 export function registerIpcHandlers(): void {
+  const packageBridge = createPackageBridgeManager({
+    inspectBuild: inspectGameBuild,
+    resourceRoot: resolvePackageBridgeResourcePath(),
+    storageRoot: storageRoot()
+  })
   ipcMain.handle('dialog:select-directory', async (_event, title: string) => {
     const result = await dialog.showOpenDialog({ title, properties: ['openDirectory'] })
     return result.canceled ? null : result.filePaths[0] ?? null
@@ -282,6 +295,10 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('project:install-bridge', (_event, projectPath: string) => installEditorBridge(projectPath))
   ipcMain.handle('project:uninstall-bridge', (_event, projectPath: string) => uninstallEditorBridge(projectPath))
   ipcMain.handle('build:inspect', (_event, buildPath: string) => inspectGameBuild(buildPath))
+  ipcMain.handle('package-bridge:inspect', (_event, buildPath: string) => packageBridge.inspect(buildPath))
+  ipcMain.handle('package-bridge:prepare', (_event, buildPath: string) => packageBridge.prepare(buildPath))
+  ipcMain.handle('package-bridge:launch', (_event, buildPath: string) => packageBridge.launch(buildPath))
+  ipcMain.handle('package-bridge:remove', (_event, buildPath: string) => packageBridge.remove(buildPath))
   ipcMain.handle('bridge:list', async () => (await readInstanceFiles(false)) as BridgeInstance[])
   ipcMain.handle('bridge:connect', (_event, instanceId: string) => connectBridge(instanceId))
   ipcMain.handle('bridge:request', <T>(_event: Electron.IpcMainInvokeEvent, request: BridgeRequest) => requestBridge<T>(request))

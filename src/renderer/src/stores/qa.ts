@@ -7,6 +7,7 @@ import type {
   GridPoint,
   QaBattleSnapshot,
   QaCard,
+  QaCardInventorySnapshot,
   QaCatalog,
   QaEntity,
   OperationResult,
@@ -32,11 +33,13 @@ export const useQaStore = defineStore('qa', () => {
   const gameBuildPath = ref('')
   const updateStatus = ref<UpdateStatus>({
     phase: nativeMode ? 'idle' : 'disabled',
-    currentVersion: '0.1.0',
+    currentVersion: '0.1.1',
     message: nativeMode ? '尚未检查更新。' : '开发模式不检查更新。'
   })
   const runtimeReady = ref(!nativeMode)
   const catalog = ref<QaCatalog>(clone(nativeMode ? emptyCatalog : demoCatalog))
+  const cardInventoryAvailable = ref(false)
+  const ownedCardCounts = ref<Record<string, number>>({})
   const battle = ref<QaBattleSnapshot>(clone(demoBattle))
   const selectedEntityId = ref<string>('enemy-01#0')
   const selectedCell = ref<GridPoint | null>({ x: 1, y: -2 })
@@ -54,6 +57,8 @@ export const useQaStore = defineStore('qa', () => {
   const sortDirection = ref<'asc' | 'desc'>('asc')
   let connectionMonitor: ReturnType<typeof setInterval> | undefined
   let updateUnsubscribe: (() => void) | undefined
+  let refreshInFlight: Promise<OperationResult> | undefined
+  let refreshAnnouncementRequested = false
 
   const selectedEntity = computed<QaEntity | null>(() => {
     if (selectedEntityId.value === battle.value.player.instanceId) {
@@ -126,6 +131,8 @@ export const useQaStore = defineStore('qa', () => {
     connectedInstanceId.value = null
     connectionStatus.value = 'disconnected'
     runtimeReady.value = false
+    cardInventoryAvailable.value = false
+    ownedCardCounts.value = {}
     connectionLabel.value = catalog.value.cards.length ? '离线目录' : '未连接'
     showNotice(message, 'error')
   }
@@ -185,6 +192,8 @@ export const useQaStore = defineStore('qa', () => {
     connectedInstanceId.value = null
     connectionStatus.value = 'connecting'
     runtimeReady.value = false
+    cardInventoryAvailable.value = false
+    ownedCardCounts.value = {}
     showNotice(`正在连接 ${instance.displayName}…`, 'loading')
     const connection = await window.qaNative.connectBridge(instance.instanceId)
     if (!connection.ok) {
@@ -195,20 +204,24 @@ export const useQaStore = defineStore('qa', () => {
     }
 
     connectedInstanceId.value = instance.instanceId
-    const [catalogResult, battleResult] = await Promise.all([
+    const [catalogResult, battleResult, cardInventoryResult] = await Promise.all([
       window.qaNative.requestBridge<QaCatalog>({ instanceId: instance.instanceId, method: 'GET', path: '/api/catalog' }),
-      window.qaNative.requestBridge<QaBattleSnapshot>({ instanceId: instance.instanceId, method: 'GET', path: '/api/battle' })
+      window.qaNative.requestBridge<QaBattleSnapshot>({ instanceId: instance.instanceId, method: 'GET', path: '/api/battle' }),
+      window.qaNative.requestBridge<QaCardInventorySnapshot>({ instanceId: instance.instanceId, method: 'GET', path: '/api/cards' })
     ])
     if (!catalogResult.ok || !catalogResult.data) {
       connectedInstanceId.value = null
       connectionStatus.value = 'disconnected'
       runtimeReady.value = false
+      cardInventoryAvailable.value = false
+      ownedCardCounts.value = {}
       const message = catalogResult.message
       showNotice(message, 'error')
       return { ok: false, message }
     }
 
     catalog.value = catalogResult.data
+    applyCardInventorySnapshot(cardInventoryResult.data)
     connectionStatus.value = 'connected'
     runtimeReady.value = Boolean(battleResult.ok && battleResult.data && battleResult.data.available !== false)
     if (runtimeReady.value && battleResult.data) battle.value = battleResult.data
@@ -225,24 +238,106 @@ export const useQaStore = defineStore('qa', () => {
     return { ok: true, message: lastOperationMessage.value }
   }
 
-  async function refreshRuntime(): Promise<OperationResult> {
+  async function performRuntimeRefresh(): Promise<OperationResult> {
     if (!window.qaNative || !connectedInstanceId.value) {
-      showNotice(connectionStatus.value === 'demo' ? '演示快照无需刷新。' : '没有已连接的运行实例。', connectionStatus.value === 'demo' ? 'info' : 'error')
-      return { ok: connectionStatus.value === 'demo', message: lastOperationMessage.value }
+      const result = {
+        ok: connectionStatus.value === 'demo',
+        message: connectionStatus.value === 'demo' ? '演示快照无需刷新。' : '没有已连接的运行实例。'
+      }
+      if (refreshAnnouncementRequested) showNotice(result.message, result.ok ? 'info' : 'error')
+      return result
     }
-    const result = await window.qaNative.requestBridge<QaBattleSnapshot>({
-      instanceId: connectedInstanceId.value,
-      method: 'GET',
-      path: '/api/battle'
-    })
-    if (result.ok && result.data) {
-      runtimeReady.value = result.data.available !== false
-      if (runtimeReady.value) battle.value = result.data
+
+    const instanceId = connectedInstanceId.value
+    const [catalogResult, battleResult, cardInventoryResult] = await Promise.all([
+      window.qaNative.requestBridge<QaCatalog>({ instanceId, method: 'GET', path: '/api/catalog' }),
+      window.qaNative.requestBridge<QaBattleSnapshot>({ instanceId, method: 'GET', path: '/api/battle' }),
+      window.qaNative.requestBridge<QaCardInventorySnapshot>({ instanceId, method: 'GET', path: '/api/cards' })
+    ])
+    if (connectedInstanceId.value !== instanceId) return { ok: false, message: '刷新期间运行实例已切换。' }
+
+    if (catalogResult.ok && catalogResult.data) {
+      catalog.value = catalogResult.data
+      try {
+        await window.qaNative.writeCatalogCache(clone(toRaw(catalog.value)))
+      } catch {
+        // The live catalog remains usable even when its offline cache cannot be updated.
+      }
+    }
+    if (cardInventoryResult.ok) applyCardInventorySnapshot(cardInventoryResult.data)
+
+    if (battleResult.ok && battleResult.data) {
+      runtimeReady.value = battleResult.data.available !== false
+      if (runtimeReady.value) battle.value = battleResult.data
     } else {
       runtimeReady.value = false
     }
-    showNotice(runtimeReady.value ? '战斗状态已刷新。' : 'Unity Editor 尚未进入 Play Mode。', result.ok ? 'success' : 'error')
-    return { ok: result.ok, message: result.message }
+
+    const ok = Boolean(catalogResult.ok && catalogResult.data && battleResult.ok && battleResult.data && cardInventoryResult.ok && cardInventoryResult.data)
+    const message = !catalogResult.ok || !catalogResult.data
+      ? `目录刷新失败：${catalogResult.message}`
+      : !battleResult.ok || !battleResult.data
+        ? `战斗数据刷新失败：${battleResult.message}`
+        : !cardInventoryResult.ok || !cardInventoryResult.data
+          ? `持有卡牌刷新失败：${cardInventoryResult.message}`
+        : runtimeReady.value
+          ? '目录与战斗数据已刷新。'
+          : '目录已刷新；当前没有可用的战斗数据。'
+    if (refreshAnnouncementRequested) showNotice(message, ok ? 'success' : 'error')
+    return { ok, message }
+  }
+
+  function refreshRuntime(announce = true): Promise<OperationResult> {
+    if (announce) refreshAnnouncementRequested = true
+    if (refreshInFlight) return refreshInFlight
+    refreshInFlight = performRuntimeRefresh().finally(() => {
+      refreshInFlight = undefined
+      refreshAnnouncementRequested = false
+    })
+    return refreshInFlight
+  }
+
+  function applyCardInventorySnapshot(snapshot?: QaCardInventorySnapshot): void {
+    const cards = snapshot?.available && Array.isArray(snapshot.cards) ? snapshot.cards : null
+    cardInventoryAvailable.value = Boolean(cards)
+    ownedCardCounts.value = cards
+      ? Object.fromEntries(cards.filter((card) => card.count > 0).map((card) => [card.typeId, card.count]))
+      : {}
+  }
+
+  async function mutateOwnedCard(typeId: string, method: 'POST' | 'DELETE'): Promise<OperationResult> {
+    if (!window.qaNative || !connectedInstanceId.value || !cardInventoryAvailable.value) {
+      const operation = { ok: false, message: '当前没有可操作的运行时卡牌库存。请先进入游戏并连接 Bridge。' }
+      showNotice(operation.message, 'error')
+      return operation
+    }
+    if (refreshInFlight) await refreshInFlight
+    const result = await window.qaNative.requestBridge<{ success: boolean; message: string }>({
+      instanceId: connectedInstanceId.value,
+      method,
+      path: '/api/cards',
+      body: { typeId }
+    })
+    const operation = {
+      ok: Boolean(result.ok && result.data?.success),
+      message: result.data?.message ?? result.message
+    }
+    if (operation.ok) await refreshRuntime(false)
+    showNotice(operation.message, operation.ok ? 'success' : 'error')
+    return operation
+  }
+
+  function addOwnedCard(typeId: string): Promise<OperationResult> {
+    return mutateOwnedCard(typeId, 'POST')
+  }
+
+  function removeOwnedCard(typeId: string): Promise<OperationResult> {
+    if ((ownedCardCounts.value[typeId] ?? 0) <= 0) {
+      const operation = { ok: false, message: `没有可删除的卡牌：${typeId}` }
+      showNotice(operation.message, 'error')
+      return Promise.resolve(operation)
+    }
+    return mutateOwnedCard(typeId, 'DELETE')
   }
 
   async function executeGm(command: string): Promise<OperationResult> {
@@ -395,6 +490,8 @@ export const useQaStore = defineStore('qa', () => {
     gameBuildPath,
     updateStatus,
     catalog,
+    cardInventoryAvailable,
+    ownedCardCounts,
     battle,
     selectedEntityId,
     selectedEntity,
@@ -421,6 +518,8 @@ export const useQaStore = defineStore('qa', () => {
     placeEquipment,
     connectToInstance,
     refreshRuntime,
+    addOwnedCard,
+    removeOwnedCard,
     executeGm,
     applyPlayer,
     applyEnemy,

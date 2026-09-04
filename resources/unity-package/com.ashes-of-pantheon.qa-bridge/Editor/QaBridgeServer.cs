@@ -154,6 +154,20 @@ namespace AshesOfPantheon.QA.EditorBridge
                 {
                     payload = QaMainThreadDispatcher.Invoke(m_adapter.GetBattleSnapshot);
                 }
+                else if (context.Request.HttpMethod == "GET" && path == "/api/cards")
+                {
+                    payload = QaMainThreadDispatcher.Invoke(m_adapter.GetCardInventorySnapshot);
+                }
+                else if (context.Request.HttpMethod == "POST" && path == "/api/cards")
+                {
+                    var request = JObject.Parse(ReadBody(context.Request));
+                    payload = QaMainThreadDispatcher.Invoke(() => m_adapter.AddOwnedCard(request));
+                }
+                else if (context.Request.HttpMethod == "DELETE" && path == "/api/cards")
+                {
+                    var request = JObject.Parse(ReadBody(context.Request));
+                    payload = QaMainThreadDispatcher.Invoke(() => m_adapter.RemoveOwnedCard(request));
+                }
                 else if (context.Request.HttpMethod == "POST" && path == "/api/gm")
                 {
                     var request = JsonConvert.DeserializeObject<GmRequest>(ReadBody(context.Request));

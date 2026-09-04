@@ -1,6 +1,6 @@
 {
   "name": "ashes-of-pantheon-qa-tool",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "packageManager": "pnpm@11.25.0",
   "private": true,
   "description": "Ashes of Pantheon runtime QA workstation",
@@ -60,6 +60,14 @@
       {
         "from": "resources/unity-package/com.ashes-of-pantheon.qa-bridge",
         "to": "unity-package/com.ashes-of-pantheon.qa-bridge"
+      },
+      {
+        "from": "resources/package-bridge/bepinex-win-x64",
+        "to": "package-bridge/bepinex-win-x64"
+      },
+      {
+        "from": "resources/package-bridge/plugin/AshesOfPantheon.QA.PackageBridge.dll",
+        "to": "package-bridge/plugin/AshesOfPantheon.QA.PackageBridge.dll"
       }
     ],
     "win": {
