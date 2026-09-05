@@ -11,7 +11,7 @@
 - 怪物：生命、攻击力、已注册意图序列、循环起点与参数编辑。
 - Editor Bridge：由工具安装到用户选择的 Unity 项目；Edit Mode 提供真实卡牌目录，Play Mode 额外提供战斗状态与修改能力，且不会进入 Player 构建。
 - 游戏包识别：检测 Windows Unity 包及 Mono/IL2CPP 后端。
-- 应用更新：安装版从 GitHub Releases 检查正式版本，按用户操作下载并重启安装。
+- 应用更新：便携版从 GitHub Releases 检查正式版本，并在浏览器中打开新版便携文件供手动替换。
 
 打包游戏的临时加载器将在取得实际游戏包后完成适配。原始游戏包不会被修改。
 
@@ -41,7 +41,7 @@ pnpm run build
 
 ## 发布更新
 
-开发模式不会访问更新源。安装版启动后会后台检查一次，也可以在“项目与连接”页面手动检查；发现版本后需要手动下载，下载完成后由用户选择“重启并安装”。
+开发模式不会访问更新源。便携版可以在“项目与连接”页面打开 GitHub Release 下载最新版；下载完成后关闭旧版本，直接运行新的便携版文件，不需要安装。
 
 发布新版本时先更新 `package.json` 的 `version`，提交后创建同版本 `v*` 标签，例如：
 
@@ -50,4 +50,4 @@ git tag v0.2.0
 git push origin v0.2.0
 ```
 
-GitHub Actions 会运行测试、构建 Windows NSIS，并把安装包、blockmap 与 `latest.yml` 发布到 GitHub Releases。标签必须与 `package.json` 版本一致。
+GitHub Actions 会运行测试、构建单文件 Windows 便携版，并把便携版 `.exe` 发布到 GitHub Releases。标签必须与 `package.json` 版本一致。

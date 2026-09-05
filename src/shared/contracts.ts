@@ -182,7 +182,6 @@ export interface QaNativeApi {
   writePreferences: (preferences: QaPreferences) => Promise<OperationResult>
   getUpdateStatus: () => Promise<UpdateStatus>
   checkForUpdates: () => Promise<OperationResult<UpdateStatus>>
-  downloadUpdate: () => Promise<OperationResult<UpdateStatus>>
-  installUpdate: () => Promise<OperationResult<UpdateStatus>>
+  openUpdateDownload: () => Promise<OperationResult<UpdateStatus>>
   onUpdateStatus: (listener: (status: UpdateStatus) => void) => () => void
 }

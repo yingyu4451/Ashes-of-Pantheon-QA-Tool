@@ -21,8 +21,7 @@ test('native preload exposes directory selection and hides demo catalog', async 
       inspectUnityProject: typeof window.qaNative?.inspectUnityProject,
       getUpdateStatus: typeof window.qaNative?.getUpdateStatus,
       checkForUpdates: typeof window.qaNative?.checkForUpdates,
-      downloadUpdate: typeof window.qaNative?.downloadUpdate,
-      installUpdate: typeof window.qaNative?.installUpdate,
+      openUpdateDownload: typeof window.qaNative?.openUpdateDownload,
       onUpdateStatus: typeof window.qaNative?.onUpdateStatus
     }))
 
@@ -31,8 +30,7 @@ test('native preload exposes directory selection and hides demo catalog', async 
       inspectUnityProject: 'function',
       getUpdateStatus: 'function',
       checkForUpdates: 'function',
-      downloadUpdate: 'function',
-      installUpdate: 'function',
+      openUpdateDownload: 'function',
       onUpdateStatus: 'function'
     })
     const menuState = await app.evaluate(({ BrowserWindow, Menu }) => ({

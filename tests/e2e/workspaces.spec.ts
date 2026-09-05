@@ -221,8 +221,7 @@ test('tab selection and window focus refresh all connected data', async ({ page 
       writePreferences: async () => ({ ok: true, message: '路径已保存。' }),
       getUpdateStatus: async () => ({ phase: 'disabled', currentVersion: '0.1.0', message: '开发模式不检查更新。' }),
       checkForUpdates: async () => ({ ok: false, message: '开发模式不检查更新。' }),
-      downloadUpdate: async () => ({ ok: false, message: '没有可下载的更新。' }),
-      installUpdate: async () => ({ ok: false, message: '没有可安装的更新。' }),
+      openUpdateDownload: async () => ({ ok: false, message: '没有可下载的便携版更新。' }),
       onUpdateStatus: () => () => undefined
     }
   })

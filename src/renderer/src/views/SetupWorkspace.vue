@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref, watch } from 'vue'
-import { Cable, Download, FolderOpen, PackageCheck, Play, RefreshCw, RotateCcw, Trash2 } from '@lucide/vue'
+import { Cable, Download, FolderOpen, PackageCheck, Play, RefreshCw, Trash2 } from '@lucide/vue'
 import { useQaStore } from '@/stores/qa'
 import type { BridgeInstance, GameBuildInspection, PackageBridgeInspection, UnityProjectInspection, UpdatePhase } from '@shared/contracts'
 
@@ -22,8 +22,8 @@ const updatePhaseLabels: Record<UpdatePhase, string> = {
   checking: '检查中',
   available: '可更新',
   'not-available': '已是最新',
-  downloading: '下载中',
-  downloaded: '待安装',
+  downloading: '打开下载',
+  downloaded: '请替换文件',
   error: '检查失败'
 }
 
@@ -329,46 +329,23 @@ onUnmounted(() => {
             <span class="border border-white/12 px-2 py-1 text-[9px] text-white/40">{{ updatePhaseLabels[store.updateStatus.phase] }}</span>
           </div>
 
-          <div
-            v-if="store.updateStatus.phase === 'downloading'"
-            class="space-y-1.5"
-            role="progressbar"
-            aria-label="更新下载进度"
-            aria-valuemin="0"
-            aria-valuemax="100"
-            :aria-valuenow="Math.round(store.updateStatus.percent ?? 0)"
-          >
-            <div class="h-2 overflow-hidden border border-white/12 bg-black/35">
-              <div class="h-full origin-left bg-[#c6a451] transition-transform duration-150" :style="{ transform: `scaleX(${(store.updateStatus.percent ?? 0) / 100})` }" />
-            </div>
-            <p class="m-0 text-right utility-font text-[9px] text-white/36">{{ Math.round(store.updateStatus.percent ?? 0) }}%</p>
-          </div>
-
           <button
             v-if="store.updateStatus.phase === 'available'"
             type="button"
             class="primary-button"
-            @click="store.downloadUpdate"
+            @click="store.openUpdateDownload"
           >
-            <Download :size="15" aria-hidden="true" />下载更新
-          </button>
-          <button
-            v-else-if="store.updateStatus.phase === 'downloaded'"
-            type="button"
-            class="primary-button"
-            @click="store.installUpdate"
-          >
-            <RotateCcw :size="15" aria-hidden="true" />重启并安装
+            <Download :size="15" aria-hidden="true" />下载便携版
           </button>
           <button
             v-else
             type="button"
             class="secondary-button"
-            :disabled="store.updateStatus.phase === 'disabled' || store.updateStatus.phase === 'checking' || store.updateStatus.phase === 'downloading'"
+            :disabled="store.updateStatus.phase === 'disabled' || store.updateStatus.phase === 'checking'"
             @click="store.checkForUpdates"
           >
             <RefreshCw :size="15" :class="store.updateStatus.phase === 'checking' ? 'animate-spin' : ''" aria-hidden="true" />
-            {{ store.updateStatus.phase === 'checking' ? '检查中…' : store.updateStatus.phase === 'downloading' ? '下载中…' : '检查更新' }}
+            {{ store.updateStatus.phase === 'checking' ? '检查中…' : '检查更新' }}
           </button>
         </div>
       </section>

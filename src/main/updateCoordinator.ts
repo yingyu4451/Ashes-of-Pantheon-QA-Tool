@@ -1,29 +1,20 @@
 import type { OperationResult, UpdateStatus } from '../shared/contracts.js'
 
-export type UpdateDriverEvent =
-  | 'checking-for-update'
-  | 'update-available'
-  | 'update-not-available'
-  | 'download-progress'
-  | 'update-downloaded'
-  | 'error'
+export interface PortableRelease {
+  version: string
+  downloadUrl: string
+}
 
 export interface UpdateDriver {
-  autoDownload: boolean
-  autoInstallOnAppQuit: boolean
-  allowPrerelease: boolean
-  on: (event: UpdateDriverEvent, listener: (...args: unknown[]) => void) => unknown
-  checkForUpdates: () => Promise<unknown>
-  downloadUpdate: () => Promise<unknown>
-  quitAndInstall: (isSilent?: boolean, isForceRunAfter?: boolean) => void
+  getLatestRelease: () => Promise<PortableRelease>
+  openExternal: (url: string) => Promise<void>
 }
 
 export interface UpdateCoordinator {
   getStatus: () => UpdateStatus
   subscribe: (listener: (status: UpdateStatus) => void) => () => void
   check: () => Promise<OperationResult<UpdateStatus>>
-  download: () => Promise<OperationResult<UpdateStatus>>
-  install: () => OperationResult<UpdateStatus>
+  openDownload: () => Promise<OperationResult<UpdateStatus>>
 }
 
 interface UpdateCoordinatorOptions {
@@ -36,10 +27,16 @@ function copyStatus(status: UpdateStatus): UpdateStatus {
   return { ...status }
 }
 
-function versionFrom(value: unknown): string | undefined {
-  if (!value || typeof value !== 'object') return undefined
-  const version = (value as { version?: unknown }).version
-  return typeof version === 'string' ? version : undefined
+function compareVersions(left: string, right: string): number {
+  const normalize = (version: string): number[] => version.replace(/^v/i, '').split('.').map((part) => Number.parseInt(part, 10) || 0)
+  const leftParts = normalize(left)
+  const rightParts = normalize(right)
+  const length = Math.max(leftParts.length, rightParts.length)
+  for (let index = 0; index < length; index++) {
+    const difference = (leftParts[index] ?? 0) - (rightParts[index] ?? 0)
+    if (difference !== 0) return difference
+  }
+  return 0
 }
 
 function errorMessage(value: unknown): string {
@@ -50,6 +47,7 @@ function errorMessage(value: unknown): string {
 export function createUpdateCoordinator(options: UpdateCoordinatorOptions): UpdateCoordinator {
   const { driver, isPackaged, currentVersion } = options
   const listeners = new Set<(status: UpdateStatus) => void>()
+  let latestRelease: PortableRelease | null = null
   let status: UpdateStatus = isPackaged
     ? { phase: 'idle', currentVersion, message: '尚未检查更新。' }
     : { phase: 'disabled', currentVersion, message: '开发模式不检查更新。' }
@@ -64,44 +62,6 @@ export function createUpdateCoordinator(options: UpdateCoordinatorOptions): Upda
     return { ok: false, message: status.message, data: copyStatus(status) }
   }
 
-  if (isPackaged) {
-    driver.autoDownload = false
-    driver.autoInstallOnAppQuit = false
-    driver.allowPrerelease = false
-
-    driver.on('checking-for-update', () => {
-      publish({ phase: 'checking', currentVersion, message: '正在检查 GitHub 更新…' })
-    })
-    driver.on('update-available', (info) => {
-      const latestVersion = versionFrom(info)
-      publish({ phase: 'available', currentVersion, latestVersion, message: latestVersion ? `发现新版本 ${latestVersion}。` : '发现新版本。' })
-    })
-    driver.on('update-not-available', (info) => {
-      publish({ phase: 'not-available', currentVersion, latestVersion: versionFrom(info) ?? currentVersion, message: '当前已是最新版本。' })
-    })
-    driver.on('download-progress', (progress) => {
-      const value = progress && typeof progress === 'object' ? progress as Record<string, unknown> : {}
-      const percent = typeof value.percent === 'number' ? Math.min(100, Math.max(0, value.percent)) : 0
-      publish({
-        phase: 'downloading',
-        currentVersion,
-        latestVersion: status.latestVersion,
-        percent,
-        transferred: typeof value.transferred === 'number' ? value.transferred : undefined,
-        total: typeof value.total === 'number' ? value.total : undefined,
-        bytesPerSecond: typeof value.bytesPerSecond === 'number' ? value.bytesPerSecond : undefined,
-        message: `正在下载更新 ${Math.round(percent)}%…`
-      })
-    })
-    driver.on('update-downloaded', (info) => {
-      const latestVersion = versionFrom(info) ?? status.latestVersion
-      publish({ phase: 'downloaded', currentVersion, latestVersion, percent: 100, message: '更新已下载，可以重启安装。' })
-    })
-    driver.on('error', (error) => {
-      fail(error)
-    })
-  }
-
   return {
     getStatus: () => copyStatus(status),
     subscribe(listener) {
@@ -113,30 +73,28 @@ export function createUpdateCoordinator(options: UpdateCoordinatorOptions): Upda
       if (!isPackaged) return { ok: false, message: status.message, data: copyStatus(status) }
       publish({ phase: 'checking', currentVersion, message: '正在检查 GitHub 更新…' })
       try {
-        await driver.checkForUpdates()
+        latestRelease = await driver.getLatestRelease()
+        if (compareVersions(latestRelease.version, currentVersion) > 0) {
+          publish({ phase: 'available', currentVersion, latestVersion: latestRelease.version, message: `发现便携版 ${latestRelease.version}。` })
+        } else {
+          publish({ phase: 'not-available', currentVersion, latestVersion: latestRelease.version, message: '当前已是最新便携版。' })
+        }
         return { ok: true, message: status.message, data: copyStatus(status) }
       } catch (error) {
+        latestRelease = null
         return fail(error)
       }
     },
-    async download() {
-      if (status.phase !== 'available') {
-        return { ok: false, message: '当前没有可下载的更新。', data: copyStatus(status) }
+    async openDownload() {
+      if (status.phase !== 'available' || !latestRelease) {
+        return { ok: false, message: '当前没有可下载的便携版更新。', data: copyStatus(status) }
       }
-      publish({ phase: 'downloading', currentVersion, latestVersion: status.latestVersion, percent: 0, message: '正在下载更新 0%…' })
       try {
-        await driver.downloadUpdate()
-        return { ok: true, message: status.message, data: copyStatus(status) }
+        await driver.openExternal(latestRelease.downloadUrl)
+        return { ok: true, message: '已在浏览器中打开便携版下载。下载完成后关闭旧版本并运行新文件。', data: copyStatus(status) }
       } catch (error) {
         return fail(error)
       }
-    },
-    install() {
-      if (status.phase !== 'downloaded') {
-        return { ok: false, message: '更新尚未下载完成。', data: copyStatus(status) }
-      }
-      driver.quitAndInstall(false, true)
-      return { ok: true, message: '正在重启并安装更新…', data: copyStatus(status) }
     }
   }
 }

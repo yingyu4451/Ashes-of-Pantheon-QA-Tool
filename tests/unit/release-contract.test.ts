@@ -12,6 +12,8 @@ describe('release contract', () => {
         appId: string
         productName: string
         artifactName?: string
+        win?: { target?: string }
+        nsis?: unknown
         publish?: Array<{ provider: string; owner: string; repo: string; releaseType?: string }>
       }
     }
@@ -19,8 +21,11 @@ describe('release contract', () => {
     expect(packageJson.name).toBe('ashes-of-pantheon-qa-tool')
     expect(packageJson.build.appId).toBe('com.ashes-of-pantheon.qa-tool')
     expect(packageJson.build.productName).toBe('Ashes of Pantheon QA Tool')
-    expect(packageJson.build.artifactName).toBe('Ashes-of-Pantheon-QA-Tool-Setup-${version}.${ext}')
-    expect(packageJson.dependencies['electron-updater']).toBeDefined()
+    expect(packageJson.build.artifactName).toBe('Ashes-of-Pantheon-QA-Tool-Portable-${version}.${ext}')
+    expect(packageJson.build.win?.target).toBe('portable')
+    expect(packageJson.build.nsis).toBeUndefined()
+    expect(packageJson.dependencies['electron-updater']).toBeUndefined()
+    expect(packageJson.scripts['build:win']).toContain('--win portable')
     expect(packageJson.scripts['build:win']).toContain('--publish never')
     expect(packageJson.repository?.url).toContain('yingyu4451/Ashes-of-Pantheon-QA-Tool')
     expect(packageJson.build.publish).toEqual([{
@@ -39,7 +44,9 @@ describe('release contract', () => {
     expect(workflow).toContain('contents: write')
     expect(workflow).toContain('pnpm run build:win')
     expect(workflow).toContain('gh release create')
-    expect(workflow).toContain('release/latest.yml')
-    expect(workflow).toContain('release/Ashes-of-Pantheon-QA-Tool-Setup-$packageVersion.exe')
+    expect(workflow).toContain('release/Ashes-of-Pantheon-QA-Tool-Portable-$packageVersion.exe')
+    expect(workflow).not.toContain('release/latest.yml')
+    expect(workflow).not.toContain('.blockmap')
+    expect(workflow).not.toContain('-Setup-')
   })
 })

@@ -33,7 +33,7 @@ export const useQaStore = defineStore('qa', () => {
   const gameBuildPath = ref('')
   const updateStatus = ref<UpdateStatus>({
     phase: nativeMode ? 'idle' : 'disabled',
-    currentVersion: '0.1.2',
+    currentVersion: '0.1.3',
     message: nativeMode ? '尚未检查更新。' : '开发模式不检查更新。'
   })
   const runtimeReady = ref(!nativeMode)
@@ -463,18 +463,10 @@ export const useQaStore = defineStore('qa', () => {
     return result
   }
 
-  async function downloadUpdate(): Promise<OperationResult<UpdateStatus>> {
-    if (!window.qaNative) return { ok: false, message: '更新下载仅在 Electron 应用中可用。' }
-    const result = await window.qaNative.downloadUpdate()
-    if (result.data) updateStatus.value = result.data
+  async function openUpdateDownload(): Promise<OperationResult<UpdateStatus>> {
+    if (!window.qaNative) return { ok: false, message: '便携版下载仅在 Electron 应用中可用。' }
+    const result = await window.qaNative.openUpdateDownload()
     showNotice(result.message, result.ok ? 'info' : 'error')
-    return result
-  }
-
-  async function installUpdate(): Promise<OperationResult<UpdateStatus>> {
-    if (!window.qaNative) return { ok: false, message: '更新安装仅在 Electron 应用中可用。' }
-    const result = await window.qaNative.installUpdate()
-    if (!result.ok) showNotice(result.message, 'error')
     return result
   }
 
@@ -530,8 +522,7 @@ export const useQaStore = defineStore('qa', () => {
     applyIntents,
     rememberPaths,
     checkForUpdates,
-    downloadUpdate,
-    installUpdate,
+    openUpdateDownload,
     initialize
   }
 })

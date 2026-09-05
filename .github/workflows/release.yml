@@ -40,7 +40,7 @@ jobs:
       - name: Test
         run: pnpm test
 
-      - name: Build Windows installer
+      - name: Build Windows portable app
         run: pnpm run build:win
 
       - name: Publish GitHub Release
@@ -49,11 +49,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $packageVersion = (Get-Content package.json -Raw | ConvertFrom-Json).version
-          $installer = "release/Ashes-of-Pantheon-QA-Tool-Setup-$packageVersion.exe"
+          $portableApp = "release/Ashes-of-Pantheon-QA-Tool-Portable-$packageVersion.exe"
           gh release create $env:GITHUB_REF_NAME `
-            $installer `
-            "$installer.blockmap" `
-            "release/latest.yml" `
+            $portableApp `
             --title "Ashes of Pantheon QA Tool $env:GITHUB_REF_NAME" `
             --generate-notes `
             --verify-tag
