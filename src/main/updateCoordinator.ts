@@ -1,26 +1,28 @@
 import type { OperationResult, UpdateStatus } from '../shared/contracts.js'
+import type { PortableRelease } from './portableArchive.js'
 
-export interface PortableRelease {
-  version: string
-  downloadUrl: string
-}
+export type UpdateProgress = Pick<UpdateStatus, 'percent' | 'transferred' | 'total' | 'bytesPerSecond' | 'mode'>
 
 export interface UpdateDriver {
   getLatestRelease: () => Promise<PortableRelease>
-  openExternal: (url: string) => Promise<void>
+  download: (release: PortableRelease, progress: (value: UpdateProgress) => void) => Promise<void>
+  restart: () => Promise<void>
 }
 
 export interface UpdateCoordinator {
   getStatus: () => UpdateStatus
   subscribe: (listener: (status: UpdateStatus) => void) => () => void
   check: () => Promise<OperationResult<UpdateStatus>>
-  openDownload: () => Promise<OperationResult<UpdateStatus>>
+  download: () => Promise<OperationResult<UpdateStatus>>
+  restart: () => Promise<OperationResult<UpdateStatus>>
 }
 
 interface UpdateCoordinatorOptions {
   driver: UpdateDriver
   isPackaged: boolean
   currentVersion: string
+  initialMessage?: string
+  initialError?: boolean
 }
 
 function copyStatus(status: UpdateStatus): UpdateStatus {
@@ -49,7 +51,7 @@ export function createUpdateCoordinator(options: UpdateCoordinatorOptions): Upda
   const listeners = new Set<(status: UpdateStatus) => void>()
   let latestRelease: PortableRelease | null = null
   let status: UpdateStatus = isPackaged
-    ? { phase: 'idle', currentVersion, message: '尚未检查更新。' }
+    ? { phase: options.initialError ? 'error' : 'idle', currentVersion, message: options.initialMessage ?? '尚未检查更新。' }
     : { phase: 'disabled', currentVersion, message: '开发模式不检查更新。' }
 
   const publish = (next: UpdateStatus): void => {
@@ -70,12 +72,12 @@ export function createUpdateCoordinator(options: UpdateCoordinatorOptions): Upda
       return () => listeners.delete(listener)
     },
     async check() {
-      if (!isPackaged) return { ok: false, message: status.message, data: copyStatus(status) }
+      if (!isPackaged || ['checking', 'downloading', 'downloaded', 'applying'].includes(status.phase)) return { ok: false, message: status.message, data: copyStatus(status) }
       publish({ phase: 'checking', currentVersion, message: '正在检查 GitHub 更新…' })
       try {
         latestRelease = await driver.getLatestRelease()
         if (compareVersions(latestRelease.version, currentVersion) > 0) {
-          publish({ phase: 'available', currentVersion, latestVersion: latestRelease.version, message: `发现便携版 ${latestRelease.version}。` })
+          publish({ phase: 'available', currentVersion, latestVersion: latestRelease.version, message: `发现 ZIP 便携版 ${latestRelease.version}。` })
         } else {
           publish({ phase: 'not-available', currentVersion, latestVersion: latestRelease.version, message: '当前已是最新便携版。' })
         }
@@ -85,16 +87,26 @@ export function createUpdateCoordinator(options: UpdateCoordinatorOptions): Upda
         return fail(error)
       }
     },
-    async openDownload() {
+    async download() {
       if (status.phase !== 'available' || !latestRelease) {
         return { ok: false, message: '当前没有可下载的便携版更新。', data: copyStatus(status) }
       }
+      publish({ ...status, phase: 'downloading', percent: 0, message: '正在验证本地版本并准备下载…' })
       try {
-        await driver.openExternal(latestRelease.downloadUrl)
-        return { ok: true, message: '已在浏览器中打开便携版下载。下载完成后关闭旧版本并运行新文件。', data: copyStatus(status) }
+        await driver.download(latestRelease, (progress) => publish({ ...status, ...progress, phase: 'downloading', message: (progress.percent ?? 0) >= 100 ? '下载完成，正在校验并暂存…' : progress.mode === 'delta' ? '正在下载增量 ZIP…' : '正在下载完整 ZIP…' }))
+        publish({ ...status, phase: 'downloaded', percent: 100, message: '更新已校验，等待重启。' })
+        return { ok: true, message: status.message, data: copyStatus(status) }
       } catch (error) {
         return fail(error)
       }
+    },
+    async restart() {
+      if (status.phase !== 'downloaded') return { ok: false, message: '请先下载并校验更新。', data: copyStatus(status) }
+      publish({ ...status, phase: 'applying', message: '正在准备重启并更新…' })
+      try {
+        await driver.restart()
+        return { ok: true, message: status.message, data: copyStatus(status) }
+      } catch (error) { return fail(error) }
     }
   }
 }

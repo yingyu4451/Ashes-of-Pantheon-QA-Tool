@@ -22,9 +22,10 @@ const updatePhaseLabels: Record<UpdatePhase, string> = {
   checking: '检查中',
   available: '可更新',
   'not-available': '已是最新',
-  downloading: '打开下载',
-  downloaded: '请替换文件',
-  error: '检查失败'
+  downloading: '下载与校验',
+  downloaded: '待重启',
+  applying: '正在重启',
+  error: '更新失败'
 }
 
 async function selectUnityProject(): Promise<void> {
@@ -320,32 +321,49 @@ onUnmounted(() => {
         <div class="space-y-3">
           <div class="flex min-h-[58px] flex-wrap items-center gap-x-5 gap-y-2 border border-white/10 bg-white/[0.025] px-4 py-3">
             <div class="min-w-0 flex-1">
-              <p class="m-0 break-words text-[12px] font-semibold text-white/74">{{ store.updateStatus.message }}</p>
+              <p class="m-0 break-words text-[12px] font-semibold text-white/74" role="status" aria-live="polite">{{ store.updateStatus.message }}</p>
               <p class="utility-font m-0 mt-1 text-[9px] text-white/30">
                 当前 <span translate="no">v{{ store.updateStatus.currentVersion }}</span>
                 <template v-if="store.updateStatus.latestVersion"> · 最新 <span translate="no">v{{ store.updateStatus.latestVersion }}</span></template>
               </p>
+              <p v-if="store.updateStatus.mode" class="m-0 mt-1 text-[10px] text-[#67b49e]">{{ store.updateStatus.mode === 'delta' ? '增量 ZIP' : '完整 ZIP' }}</p>
             </div>
             <span class="border border-white/12 px-2 py-1 text-[9px] text-white/40">{{ updatePhaseLabels[store.updateStatus.phase] }}</span>
+          </div>
+
+          <div v-if="store.updateStatus.phase === 'downloading'" class="space-y-1.5">
+            <progress class="block h-1.5 w-full accent-[#c6a451]" :value="store.updateStatus.percent ?? 0" max="100" aria-label="更新下载进度" />
+            <p class="utility-font m-0 text-[10px] tabular-nums text-white/55">
+              {{ Math.floor(store.updateStatus.percent ?? 0) }}%
+              <template v-if="store.updateStatus.total"> · {{ ((store.updateStatus.transferred ?? 0) / 1048576).toFixed(1) }} / {{ (store.updateStatus.total / 1048576).toFixed(1) }} MB</template>
+            </p>
           </div>
 
           <button
             v-if="store.updateStatus.phase === 'available'"
             type="button"
             class="primary-button"
-            @click="store.openUpdateDownload"
+            @click="store.downloadUpdate"
           >
-            <Download :size="15" aria-hidden="true" />下载便携版
+            <Download :size="15" aria-hidden="true" />下载更新
+          </button>
+          <button
+            v-else-if="store.updateStatus.phase === 'downloaded'"
+            type="button"
+            class="primary-button"
+            @click="store.restartForUpdate"
+          >
+            <RefreshCw :size="15" aria-hidden="true" />重启并更新
           </button>
           <button
             v-else
             type="button"
             class="secondary-button"
-            :disabled="store.updateStatus.phase === 'disabled' || store.updateStatus.phase === 'checking'"
+            :disabled="['disabled', 'checking', 'downloading', 'applying'].includes(store.updateStatus.phase)"
             @click="store.checkForUpdates"
           >
-            <RefreshCw :size="15" :class="store.updateStatus.phase === 'checking' ? 'animate-spin' : ''" aria-hidden="true" />
-            {{ store.updateStatus.phase === 'checking' ? '检查中…' : '检查更新' }}
+            <RefreshCw :size="15" :class="['checking', 'downloading', 'applying'].includes(store.updateStatus.phase) ? 'animate-spin motion-reduce:animate-none' : ''" aria-hidden="true" />
+            {{ store.updateStatus.phase === 'checking' ? '检查中…' : store.updateStatus.phase === 'downloading' ? '更新准备中…' : store.updateStatus.phase === 'applying' ? '重启中…' : '检查更新' }}
           </button>
         </div>
       </section>
@@ -354,3 +372,10 @@ onUnmounted(() => {
     </div>
   </section>
 </template>
+
+<style scoped>
+progress { appearance: none; border: 0; background: rgb(255 255 255 / 10%); }
+progress::-webkit-progress-bar { background: rgb(255 255 255 / 10%); }
+progress::-webkit-progress-value { background: #c6a451; }
+progress::-moz-progress-bar { background: #c6a451; }
+</style>

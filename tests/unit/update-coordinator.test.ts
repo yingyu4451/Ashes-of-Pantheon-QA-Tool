@@ -1,62 +1,66 @@
 import { describe, expect, it } from 'vitest'
-import { createUpdateCoordinator, type PortableRelease, type UpdateDriver } from '../../src/main/updateCoordinator'
+import { createUpdateCoordinator, type UpdateDriver } from '../../src/main/updateCoordinator'
+import type { PortableRelease } from '../../src/main/portableArchive'
 
-class FakeUpdateDriver implements UpdateDriver {
-  release: PortableRelease = {
-    version: '0.2.0',
-    downloadUrl: 'https://github.com/example/releases/download/v0.2.0/App-Portable-0.2.0.exe'
+function fixture(isPackaged = true) {
+  const release = { version: '0.2.0' } as PortableRelease
+  let downloads = 0
+  let restarts = 0
+  const driver: UpdateDriver = {
+    getLatestRelease: async () => release,
+    download: async (_release, progress) => { downloads++; progress({ percent: 50, transferred: 5, total: 10, mode: 'delta' }) },
+    restart: async () => { restarts++ }
   }
-  checkCalls = 0
-  openedUrls: string[] = []
-
-  async getLatestRelease(): Promise<PortableRelease> {
-    this.checkCalls++
-    return this.release
-  }
-
-  async openExternal(url: string): Promise<void> {
-    this.openedUrls.push(url)
-  }
+  const coordinator = createUpdateCoordinator({ driver, isPackaged, currentVersion: '0.1.4' })
+  return { coordinator, driver, release, counts: () => ({ downloads, restarts }) }
 }
 
-describe('portable update coordinator', () => {
-  it('disables GitHub checks in development mode', async () => {
-    const driver = new FakeUpdateDriver()
-    const coordinator = createUpdateCoordinator({ driver, isPackaged: false, currentVersion: '0.1.3' })
-
-    expect(coordinator.getStatus()).toMatchObject({ phase: 'disabled', currentVersion: '0.1.3' })
-    expect((await coordinator.check()).ok).toBe(false)
-    expect(driver.checkCalls).toBe(0)
-  })
-
-  it('finds a newer portable release and opens its download without installation', async () => {
-    const driver = new FakeUpdateDriver()
-    const coordinator = createUpdateCoordinator({ driver, isPackaged: true, currentVersion: '0.1.3' })
-
+describe('ZIP update coordinator', () => {
+  it('downloads in-app and only restarts after the user requests a verified update', async () => {
+    const { coordinator, counts } = fixture()
+    const phases: string[] = []
+    coordinator.subscribe((status) => phases.push(status.phase))
+    expect((await coordinator.restart()).ok).toBe(false)
     expect((await coordinator.check()).ok).toBe(true)
-    expect(driver.checkCalls).toBe(1)
-    expect(coordinator.getStatus()).toMatchObject({ phase: 'available', latestVersion: '0.2.0' })
-    expect((await coordinator.openDownload()).ok).toBe(true)
-    expect(driver.openedUrls).toEqual([driver.release.downloadUrl])
+    expect((await coordinator.download()).ok).toBe(true)
+    expect(coordinator.getStatus()).toMatchObject({ phase: 'downloaded', latestVersion: '0.2.0', percent: 100 })
+    expect(counts()).toEqual({ downloads: 1, restarts: 0 })
+    expect((await coordinator.restart()).ok).toBe(true)
+    expect(counts().restarts).toBe(1)
+    expect(phases).toContain('downloading')
   })
-
-  it('reports the current portable release and guards missing downloads', async () => {
-    const driver = new FakeUpdateDriver()
-    driver.release = { version: '0.1.3', downloadUrl: 'https://example.invalid/current.exe' }
-    const coordinator = createUpdateCoordinator({ driver, isPackaged: true, currentVersion: '0.1.3' })
-
-    expect((await coordinator.openDownload()).ok).toBe(false)
-    expect((await coordinator.check()).ok).toBe(true)
-    expect(coordinator.getStatus()).toMatchObject({ phase: 'not-available', latestVersion: '0.1.3' })
-    expect(driver.openedUrls).toEqual([])
-  })
-
-  it('preserves GitHub check errors', async () => {
-    const driver = new FakeUpdateDriver()
-    driver.getLatestRelease = async () => { throw new Error('GitHub 暂时不可用') }
-    const coordinator = createUpdateCoordinator({ driver, isPackaged: true, currentVersion: '0.1.3' })
-
+  it('disables development updates and rejects duplicate downloads/checks', async () => {
+    const dev = fixture(false)
+    expect((await dev.coordinator.check()).ok).toBe(false)
+    expect((await dev.coordinator.download()).ok).toBe(false)
+    const { coordinator, driver, counts } = fixture()
+    let finish!: () => void
+    driver.download = () => new Promise<void>((resolve) => { finish = resolve })
+    await coordinator.check()
+    const downloading = coordinator.download()
+    expect((await coordinator.download()).ok).toBe(false)
     expect((await coordinator.check()).ok).toBe(false)
-    expect(coordinator.getStatus()).toMatchObject({ phase: 'error', message: 'GitHub 暂时不可用' })
+    finish()
+    await downloading
+    expect(counts().restarts).toBe(0)
+  })
+  it('does not allow applying a failed download and supports retry', async () => {
+    const { coordinator, driver } = fixture()
+    driver.download = async () => { throw new Error('ZIP checksum failed') }
+    await coordinator.check()
+    expect((await coordinator.download()).ok).toBe(false)
+    expect(coordinator.getStatus()).toMatchObject({ phase: 'error', message: 'ZIP checksum failed' })
+    expect((await coordinator.restart()).ok).toBe(false)
+    expect((await coordinator.check()).ok).toBe(true)
+  })
+  it('reports check errors and skips releases at or below the current version', async () => {
+    const { coordinator, release, driver } = fixture()
+    release.version = '0.1.4'
+    await coordinator.check()
+    expect(coordinator.getStatus().phase).toBe('not-available')
+    expect((await coordinator.download()).ok).toBe(false)
+    driver.getLatestRelease = async () => { throw new Error('GitHub unavailable') }
+    expect((await coordinator.check()).ok).toBe(false)
+    expect(coordinator.getStatus().message).toBe('GitHub unavailable')
   })
 })

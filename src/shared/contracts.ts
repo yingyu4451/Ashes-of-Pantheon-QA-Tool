@@ -4,7 +4,7 @@ export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'de
 export type CardCategory = 'equipment' | 'placement' | 'directional' | 'target' | 'effect'
 export type Rarity = 'common' | 'rare' | 'epic' | 'legendary'
 export type EntityKind = 'player' | 'enemy' | 'equipment'
-export type UpdatePhase = 'disabled' | 'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error'
+export type UpdatePhase = 'disabled' | 'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'applying' | 'error'
 
 export interface GridPoint {
   x: number
@@ -141,6 +141,7 @@ export interface OperationResult<T = undefined> {
 }
 
 export interface UpdateStatus {
+  mode?: 'full' | 'delta'
   phase: UpdatePhase
   currentVersion: string
   latestVersion?: string
@@ -182,6 +183,7 @@ export interface QaNativeApi {
   writePreferences: (preferences: QaPreferences) => Promise<OperationResult>
   getUpdateStatus: () => Promise<UpdateStatus>
   checkForUpdates: () => Promise<OperationResult<UpdateStatus>>
-  openUpdateDownload: () => Promise<OperationResult<UpdateStatus>>
+  downloadUpdate: () => Promise<OperationResult<UpdateStatus>>
+  restartForUpdate: () => Promise<OperationResult<UpdateStatus>>
   onUpdateStatus: (listener: (status: UpdateStatus) => void) => () => void
 }

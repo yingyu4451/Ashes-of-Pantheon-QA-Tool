@@ -20,7 +20,8 @@ const api: QaNativeApi = {
   writePreferences: (preferences) => ipcRenderer.invoke('preferences:write', preferences),
   getUpdateStatus: () => ipcRenderer.invoke('update:get-status'),
   checkForUpdates: () => ipcRenderer.invoke('update:check'),
-  openUpdateDownload: () => ipcRenderer.invoke('update:open-download'),
+  downloadUpdate: () => ipcRenderer.invoke('update:download'),
+  restartForUpdate: () => ipcRenderer.invoke('update:restart'),
   onUpdateStatus: (listener) => {
     const handler = (_event: Electron.IpcRendererEvent, status: UpdateStatus): void => listener(status)
     ipcRenderer.on('update:status', handler)

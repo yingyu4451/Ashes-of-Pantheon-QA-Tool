@@ -40,7 +40,20 @@ jobs:
       - name: Test
         run: pnpm test
 
-      - name: Build Windows portable app
+      - name: Read previous ZIP baseline
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $previousJson = gh release view --json tagName,assets
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot read previous Release.' }
+          $previous = $previousJson | ConvertFrom-Json
+          if ($previous.assets.name -contains 'update.json') {
+            gh release download $previous.tagName --pattern update.json --dir release-previous
+            if ($LASTEXITCODE -ne 0) { throw 'Cannot download previous ZIP manifest.' }
+          }
+
+      - name: Build Windows ZIP and incremental update
         run: pnpm run build:win
 
       - name: Publish GitHub Release
@@ -49,9 +62,14 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $packageVersion = (Get-Content package.json -Raw | ConvertFrom-Json).version
-          $portableApp = "release/Ashes-of-Pantheon-QA-Tool-Portable-$packageVersion.exe"
+          $indexPath = 'release/artifacts/update.json'
+          $index = Get-Content $indexPath -Raw | ConvertFrom-Json
+          $artifacts = @($indexPath, "release/artifacts/$($index.full.name)")
+          foreach ($delta in $index.deltas) { $artifacts += "release/artifacts/$($delta.name)" }
           gh release create $env:GITHUB_REF_NAME `
-            $portableApp `
+            @artifacts `
             --title "Ashes of Pantheon QA Tool $env:GITHUB_REF_NAME" `
+            --notes 'Download the win-x64.zip, extract it to a writable folder, then run the EXE inside. No installer. The app downloads file-level delta updates when the previous ZIP baseline matches, otherwise a full ZIP. Version 0.1.3 and older single-file builds require one manual migration to ZIP.' `
             --generate-notes `
             --verify-tag
+          if ($LASTEXITCODE -ne 0) { throw 'Release publish failed.' }

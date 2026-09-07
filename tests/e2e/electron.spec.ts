@@ -21,7 +21,8 @@ test('native preload exposes directory selection and hides demo catalog', async 
       inspectUnityProject: typeof window.qaNative?.inspectUnityProject,
       getUpdateStatus: typeof window.qaNative?.getUpdateStatus,
       checkForUpdates: typeof window.qaNative?.checkForUpdates,
-      openUpdateDownload: typeof window.qaNative?.openUpdateDownload,
+      downloadUpdate: typeof window.qaNative?.downloadUpdate,
+      restartForUpdate: typeof window.qaNative?.restartForUpdate,
       onUpdateStatus: typeof window.qaNative?.onUpdateStatus
     }))
 
@@ -30,7 +31,8 @@ test('native preload exposes directory selection and hides demo catalog', async 
       inspectUnityProject: 'function',
       getUpdateStatus: 'function',
       checkForUpdates: 'function',
-      openUpdateDownload: 'function',
+      downloadUpdate: 'function',
+      restartForUpdate: 'function',
       onUpdateStatus: 'function'
     })
     const menuState = await app.evaluate(({ BrowserWindow, Menu }) => ({
@@ -285,7 +287,7 @@ test('connection shows persistent success feedback and opens the available works
     await instanceRow.getByRole('button', { name: '连接' }).click()
     await expect(page.getByRole('button', { name: '连接中…' })).toBeDisabled()
 
-    await expect(page.getByRole('status')).toContainText('卡牌目录已同步；进入 Play Mode 后可读取战斗状态。')
+    await expect(page.getByRole('status').filter({ hasText: '卡牌目录已同步；进入 Play Mode 后可读取战斗状态。' })).toBeVisible()
     await expect(page.getByRole('heading', { name: '卡牌目录' })).toBeVisible()
     await expect(page.getByText('Editor 已连接 · 未进入 Play Mode')).toBeVisible()
     await page.getByRole('button', { name: '连接', exact: true }).first().click()
@@ -297,7 +299,7 @@ test('connection shows persistent success feedback and opens the available works
     }))
     expect(failure).toEqual({ ok: false, message: '地图尚未初始化。' })
     await rm(instanceFile)
-    await expect(page.getByRole('status')).toContainText('Unity Editor 连接已断开。', { timeout: 7000 })
+    await expect(page.getByRole('status').filter({ hasText: 'Unity Editor 连接已断开。' })).toBeVisible({ timeout: 7000 })
     await expect(page.getByText('离线目录')).toBeVisible()
   } finally {
     await app.close()

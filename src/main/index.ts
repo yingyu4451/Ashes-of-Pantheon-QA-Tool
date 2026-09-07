@@ -38,10 +38,10 @@ function createWindow(): void {
   }
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   Menu.setApplicationMenu(null)
   registerIpcHandlers()
-  initializeUpdater()
+  await initializeUpdater()
   createWindow()
 
   app.on('activate', () => {

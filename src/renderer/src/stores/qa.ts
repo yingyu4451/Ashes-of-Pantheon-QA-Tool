@@ -33,7 +33,7 @@ export const useQaStore = defineStore('qa', () => {
   const gameBuildPath = ref('')
   const updateStatus = ref<UpdateStatus>({
     phase: nativeMode ? 'idle' : 'disabled',
-    currentVersion: '0.1.3',
+    currentVersion: '0.1.4',
     message: nativeMode ? '尚未检查更新。' : '开发模式不检查更新。'
   })
   const runtimeReady = ref(!nativeMode)
@@ -433,6 +433,7 @@ export const useQaStore = defineStore('qa', () => {
     if (!updateUnsubscribe) {
       updateUnsubscribe = window.qaNative.onUpdateStatus((status) => {
         updateStatus.value = status
+        if (activeWorkspace.value === 'setup') return
         if (status.phase === 'available' || status.phase === 'downloaded') showNotice(status.message, 'success')
         if (status.phase === 'error') showNotice(status.message, 'error')
       })
@@ -459,14 +460,20 @@ export const useQaStore = defineStore('qa', () => {
     if (!window.qaNative) return { ok: false, message: '更新检查仅在 Electron 应用中可用。' }
     const result = await window.qaNative.checkForUpdates()
     if (result.data) updateStatus.value = result.data
-    showNotice(result.message, result.ok ? 'info' : updateStatus.value.phase === 'disabled' ? 'info' : 'error')
     return result
   }
 
-  async function openUpdateDownload(): Promise<OperationResult<UpdateStatus>> {
+  async function downloadUpdate(): Promise<OperationResult<UpdateStatus>> {
     if (!window.qaNative) return { ok: false, message: '便携版下载仅在 Electron 应用中可用。' }
-    const result = await window.qaNative.openUpdateDownload()
-    showNotice(result.message, result.ok ? 'info' : 'error')
+    const result = await window.qaNative.downloadUpdate()
+    if (result.data) updateStatus.value = result.data
+    return result
+  }
+
+  async function restartForUpdate(): Promise<OperationResult<UpdateStatus>> {
+    if (!window.qaNative) return { ok: false, message: '重启更新仅在 Electron 应用中可用。' }
+    const result = await window.qaNative.restartForUpdate()
+    if (result.data) updateStatus.value = result.data
     return result
   }
 
@@ -522,7 +529,8 @@ export const useQaStore = defineStore('qa', () => {
     applyIntents,
     rememberPaths,
     checkForUpdates,
-    openUpdateDownload,
+    downloadUpdate,
+    restartForUpdate,
     initialize
   }
 })

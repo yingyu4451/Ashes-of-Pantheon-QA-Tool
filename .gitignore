@@ -2,6 +2,7 @@ node_modules/
 out/
 dist/
 release/
+release-previous/
 coverage/
 playwright-report/
 test-results/
