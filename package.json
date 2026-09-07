@@ -1,6 +1,6 @@
 {
   "name": "ashes-of-pantheon-qa-tool",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "packageManager": "pnpm@11.25.0",
   "private": true,
   "description": "Ashes of Pantheon runtime QA workstation",
@@ -26,6 +26,7 @@
     "@lucide/vue": "^1.39.0",
     "fflate": "^0.8.3",
     "gsap": "^3.15.0",
+    "marked": "^18.0.11",
     "pinia": "^4.0.3",
     "vue": "^3.5.42"
   },
@@ -76,7 +77,10 @@
       }
     ],
     "extraFiles": [
-      { "from": "docs/usage.md", "to": "USAGE.md" }
+      {
+        "from": "docs/usage.md",
+        "to": "USAGE.md"
+      }
     ],
     "win": {
       "target": "zip"

@@ -6,6 +6,7 @@ import EquipmentPicker from '@/components/EquipmentPicker.vue'
 import { useQaStore } from '@/stores/qa'
 import type { GridPoint, QaEntity } from '@shared/contracts'
 
+const props = defineProps<{ interactionSuspended?: boolean }>()
 const store = useQaStore()
 const placementBusy = ref(false)
 const selectedEquipment = computed(() => store.catalog.equipment.find((item) => item.typeId === store.selectedEquipmentTypeId))
@@ -100,7 +101,7 @@ function resizeWindow(): void { windowWidth.value = window.innerWidth; windowHei
 let animationFrame = 0
 let captured: HTMLElement | null = null
 let suppressClick = false
-const movementAllowed = computed(() => store.runtimeReady && store.connectionStatus === 'connected' && store.battle.movement?.allowed && !store.movingTargetId)
+const movementAllowed = computed(() => !props.interactionSuspended && store.runtimeReady && store.connectionStatus === 'connected' && store.battle.movement?.allowed && !store.movingTargetId)
 const movementReason = computed(() => store.movingTargetId ? '正在同步游戏位置…' : store.battle.movement?.reason || '请更新 Bridge 并刷新战斗数据。')
 
 function validDrop(point: GridPoint | null): boolean {
@@ -198,6 +199,8 @@ function targetSelected(): void {
 function movementKey(event: KeyboardEvent): void {
   if (event.key === 'Escape') { cancelMove(); return }
   if (moving.value?.phase !== 'targeting' || !dropCell.value) return
+  const focusedControl = event.target instanceof Element ? event.target.closest('button, input, select, textarea, a, [contenteditable="true"]') : null
+  if (focusedControl && !focusedControl.hasAttribute('data-move-control')) return
   if (event.key === 'Enter') { event.preventDefault(); void finishMove(dropCell.value); return }
   const offset: Record<string, GridPoint> = { ArrowLeft: { x: -1, y: 0 }, ArrowRight: { x: 1, y: 0 }, ArrowUp: { x: 0, y: 1 }, ArrowDown: { x: 0, y: -1 } }
   const delta = offset[event.key]
@@ -290,11 +293,14 @@ async function placeEquipment(): Promise<void> {
         </div>
         <div class="flex items-center gap-2">
           <span class="flex items-center gap-2"><Crosshair :size="13" aria-hidden="true" /> 选中格 {{ store.selectedCell ? `${store.selectedCell.x}, ${store.selectedCell.y}` : '—' }}</span>
-          <button v-if="moving?.phase === 'targeting'" type="button" class="btn btn-ghost btn-square btn-sm" aria-label="取消移动" title="取消移动" @click="cancelMove"><X :size="16" aria-hidden="true" /></button>
-          <button v-else type="button" class="btn btn-ghost btn-square btn-sm" :disabled="!movementAllowed || !store.selectedEntity?.moveTargetId || Boolean(moving)" aria-label="移动所选对象" :title="movementAllowed ? '移动所选对象' : movementReason" @click="targetSelected"><Move :size="16" aria-hidden="true" /></button>
+          <button v-if="moving?.phase === 'targeting'" data-move-control type="button" class="btn btn-ghost btn-square btn-sm" aria-label="取消移动" title="取消移动" @click="cancelMove"><X :size="16" aria-hidden="true" /></button>
+          <button v-else data-move-control type="button" class="btn btn-ghost btn-square btn-sm" :disabled="!movementAllowed || !store.selectedEntity?.moveTargetId || Boolean(moving)" aria-label="移动所选对象" :title="movementAllowed ? '移动所选对象' : movementReason" @click="targetSelected"><Move :size="16" aria-hidden="true" /></button>
         </div>
       </div>
-      <div v-if="store.movingTargetId || moving?.phase === 'targeting'" class="shrink-0 border-b border-white/10 px-4 py-2 text-[11px] text-secondary" role="status" aria-live="polite">{{ store.movingTargetId ? '正在同步游戏位置…' : `${moving?.entity.name} → ${dropCell?.x}, ${dropCell?.y}` }}</div>
+      <div class="grid h-10 shrink-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-3 border-b border-white/10 px-4 text-[11px]">
+        <span class="flex items-center gap-1.5 whitespace-nowrap text-white/60"><Move :size="13" aria-hidden="true" />长按拖动对象 · 更改位置</span>
+        <span class="min-w-0 truncate text-right text-secondary" role="status" aria-live="polite">{{ store.movingTargetId ? '正在同步游戏位置…' : moving?.phase === 'targeting' ? `${moving.entity.name} → ${dropCell?.x}, ${dropCell?.y}` : '' }}</span>
+      </div>
 
       <div ref="gridViewport" class="flex min-h-0 flex-1 items-center justify-center overflow-auto p-5">
         <div class="relative shrink-0 border border-[#c6a451]/28 bg-[#7b5e36] p-2 shadow-[0_24px_80px_rgb(0_0_0/0.38)] cut-corner">

@@ -110,7 +110,7 @@ test('card catalog shows owned counts and supports card inventory actions', asyn
   await expect(page.getByRole('status')).toContainText('已删除场上装备：TestEquipment')
   await equipment.click()
   await expect(page.getByRole('heading', { name: '战斗工作台' })).toBeVisible()
-  await expect(page.getByRole('status')).toContainText('已选择装备“测试装备牌”，请在地图上选择格子后放置。')
+  await expect(page.getByRole('status').filter({ hasText: '已选择装备“测试装备牌”，请在地图上选择格子后放置。' })).toBeVisible()
 })
 
 test('switching game packages ignores stale Bridge inspection results', async ({ page }) => {

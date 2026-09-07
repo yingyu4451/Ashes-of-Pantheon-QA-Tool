@@ -60,33 +60,37 @@ const rarities: Array<{ value: Rarity; label: string }> = [
         <h1 id="cards-title" class="display-font m-0 text-[26px] text-[#eee7dc]">卡牌目录</h1>
       </div>
 
-      <div class="flex min-w-0 flex-1 items-center justify-end gap-2 max-[640px]:w-full max-[640px]:flex-none">
+      <div class="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-x-5 gap-y-3 max-[640px]:w-full max-[640px]:flex-none">
         <label class="relative w-full max-w-[340px]">
           <span class="sr-only">搜索卡牌</span>
-          <Search class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-white/30" :size="15" aria-hidden="true" />
+          <Search class="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-white/30" :size="15" aria-hidden="true" />
           <input v-model="store.cardSearch" class="input input-sm w-full pl-9 pr-3 text-[13px]" type="search" name="card-search" placeholder="名称、TypeId、标签…" autocomplete="off" />
         </label>
 
-        <select v-model="store.sortKey" name="card-sort" class="select select-sm px-3 text-[12px]" aria-label="排序字段">
-          <option value="typeId">按 TypeId</option>
-          <option value="category">按类型</option>
-          <option value="cost">按费用</option>
-          <option value="rarity">按稀有度</option>
-        </select>
-        <button
-          type="button"
-          class="btn btn-neutral btn-square btn-sm"
-          :title="store.sortDirection === 'asc' ? '切换为降序' : '切换为升序'"
-          :aria-label="store.sortDirection === 'asc' ? '切换为降序' : '切换为升序'"
-          @click="store.sortDirection = store.sortDirection === 'asc' ? 'desc' : 'asc'"
-        >
-          <ArrowDownAZ v-if="store.sortDirection === 'asc'" :size="16" aria-hidden="true" />
-          <ArrowUpAZ v-else :size="16" aria-hidden="true" />
-        </button>
+        <div class="flex shrink-0 items-center gap-2" role="group" aria-labelledby="card-sort-label">
+          <span id="card-sort-label" class="text-[12px] font-semibold text-white/65">排序</span>
+          <select v-model="store.sortKey" name="card-sort" class="select select-sm w-32 px-3 text-[12px]" aria-label="排序字段">
+            <option value="typeId">按 TypeId</option>
+            <option value="category">按类型</option>
+            <option value="cost">按费用</option>
+            <option value="rarity">按稀有度</option>
+          </select>
+          <button
+            type="button"
+            class="btn btn-neutral btn-square btn-sm"
+            :title="store.sortDirection === 'asc' ? '切换为降序' : '切换为升序'"
+            :aria-label="store.sortDirection === 'asc' ? '切换为降序' : '切换为升序'"
+            @click="store.sortDirection = store.sortDirection === 'asc' ? 'desc' : 'asc'"
+          >
+            <ArrowDownAZ v-if="store.sortDirection === 'asc'" :size="16" aria-hidden="true" />
+            <ArrowUpAZ v-else :size="16" aria-hidden="true" />
+          </button>
+        </div>
       </div>
     </div>
 
-    <div class="flex shrink-0 flex-wrap items-start gap-x-8 gap-y-3 border-b border-white/8 bg-[#171619] px-6 py-3">
+    <div class="flex shrink-0 flex-wrap items-start gap-x-6 gap-y-3 border-b border-white/8 bg-[#171619] px-6 py-3" role="group" aria-labelledby="card-filter-label">
+      <span id="card-filter-label" class="flex h-7 items-center text-[12px] font-semibold text-white/65">筛选</span>
       <fieldset class="flex flex-wrap items-center gap-2">
         <legend class="float-left mr-2 text-[11px] font-bold text-white/42">类型</legend>
         <label v-for="item in categories" :key="item.value" class="flex h-7 cursor-pointer items-center gap-1.5 border border-white/10 px-2 text-[11px] text-white/58 has-[:checked]:border-[#c6a451]/48 has-[:checked]:bg-[#c6a451]/9 has-[:checked]:text-[#edcf70]">

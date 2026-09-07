@@ -132,6 +132,52 @@ test('a delayed movement keeps the original position and blocks duplicate drags 
   await expect(object).toHaveAttribute('data-grid-position', '2,-2')
 })
 
+test('map geometry stays fixed while targeting and synchronizing at desktop sizes', async ({ page }) => {
+  for (const [width, height] of [[1440, 900], [1100, 680]]) {
+    await page.setViewportSize({ width: width!, height: height! })
+    const grid = page.getByTestId('battle-grid')
+    await grid.scrollIntoViewIfNeeded()
+    await page.clock.runFor(250)
+    const initial = (await grid.boundingBox())!
+    await page.getByTestId('battle-grid').getByRole('button', { name: '选择 主角', exact: true }).click()
+    await page.getByRole('button', { name: '移动所选对象', exact: true }).click()
+    await page.clock.runFor(100)
+    const targeting = (await grid.boundingBox())!
+    expect(targeting).toEqual(initial)
+    await page.keyboard.press('Escape')
+    await page.evaluate(() => { (window as unknown as { moveTest: { delay: boolean } }).moveTest.delay = true })
+    await pressObject(page, '主角')
+    await pointAt(page, width === 1440 ? -2 : 0, -2)
+    await page.mouse.up()
+    await expect(page.getByRole('status').filter({ hasText: '正在同步游戏位置' })).toBeVisible()
+    await page.clock.runFor(100)
+    expect(await grid.boundingBox()).toEqual(initial)
+    await expect(page.getByText('长按拖动对象 · 更改位置', { exact: true })).toBeVisible()
+    await page.screenshot({ path: `test-results/stable-map-sync-${width}.png` })
+    await page.evaluate(() => (window as unknown as { moveTest: { finish: () => void } }).moveTest.finish())
+    await expect(page.getByRole('status').filter({ hasText: '正在同步游戏位置' })).toHaveCount(0)
+    await page.clock.runFor(100)
+    expect(await grid.boundingBox()).toEqual(initial)
+  }
+})
+
+test('opening help cancels targeting and help keyboard input never moves a game object', async ({ page }) => {
+  await page.getByTestId('battle-grid').getByRole('button', { name: '选择 主角', exact: true }).click()
+  await page.getByRole('button', { name: '移动所选对象' }).click()
+  await page.keyboard.press('ArrowDown')
+  const help = page.getByRole('button', { name: '使用说明', exact: true })
+  await help.focus()
+  await page.keyboard.press('Enter')
+  const dialog = page.getByRole('dialog', { name: '使用说明', exact: true })
+  await expect(dialog).toBeVisible()
+  await page.keyboard.press('Tab')
+  await page.keyboard.press('ArrowDown')
+  await page.keyboard.press('Escape')
+  await expect(dialog).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '取消移动' })).toHaveCount(0)
+  expect(await page.evaluate(() => (window as unknown as { moveTest: { moves: unknown[] } }).moveTest.moves)).toHaveLength(0)
+})
+
 test('keyboard and click targeting use the same movement command at minimum desktop size', async ({ page }) => {
   await page.setViewportSize({ width: 1100, height: 680 })
   await page.getByTestId('battle-grid').getByRole('button', { name: '选择 主角', exact: true }).click()

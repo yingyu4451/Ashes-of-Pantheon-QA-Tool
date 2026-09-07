@@ -5,6 +5,7 @@ import gsap from 'gsap'
 import AppRail from '@/components/AppRail.vue'
 import ConnectionBar from '@/components/ConnectionBar.vue'
 import GlobalNotice from '@/components/GlobalNotice.vue'
+import HelpDialog from '@/components/HelpDialog.vue'
 import BattleWorkspace from '@/views/BattleWorkspace.vue'
 import CardsWorkspace from '@/views/CardsWorkspace.vue'
 import SetupWorkspace from '@/views/SetupWorkspace.vue'
@@ -13,6 +14,7 @@ import type { WorkspaceId } from '@shared/contracts'
 
 const store = useQaStore()
 const workspaceRoot = ref<HTMLElement | null>(null)
+const helpOpen = ref(false)
 
 const workspaceComponents: Record<WorkspaceId, Component> = {
   battle: BattleWorkspace,
@@ -61,13 +63,15 @@ onUnmounted(() => {
         :phase="store.battle.phase"
         :runtime-ready="store.runtimeReady"
         @open-setup="store.activeWorkspace = 'setup'"
+        @open-help="helpOpen = true"
         @refresh="store.refreshRuntime"
       />
 
       <main id="main-workspace" ref="workspaceRoot" class="min-h-0 flex-1" tabindex="-1">
-        <component :is="activeComponent" />
+        <component :is="activeComponent" v-bind="store.activeWorkspace === 'battle' ? { interactionSuspended: helpOpen } : {}" />
       </main>
     </div>
     <GlobalNotice />
+    <HelpDialog v-if="helpOpen" @close="helpOpen = false" />
   </div>
 </template>
