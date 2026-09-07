@@ -10,7 +10,8 @@ import { stagePortableUpdate, validateRelease, type PortableRelease, type Staged
 
 const repository = 'yingyu4451/Ashes-of-Pantheon-QA-Tool'
 const updateStatusChannel = 'update:status'
-const releasesApiUrl = `https://api.github.com/repos/${repository}/releases/latest`
+const latestManifestUrl = `https://github.com/${repository}/releases/latest/download/update.json`
+const requestHeaders = { Accept: 'application/json', 'User-Agent': 'Ashes-of-Pantheon-QA-Tool' }
 const assetUrl = (version: string, name: string): string => `https://github.com/${repository}/releases/download/v${version}/${encodeURIComponent(name)}`
 
 function broadcast(status: UpdateStatus): void {
@@ -19,30 +20,95 @@ function broadcast(status: UpdateStatus): void {
   }
 }
 
+function httpError(status: number, headers: Headers, action: string): Error {
+  if (status === 429 || (status === 403 && headers.get('x-ratelimit-remaining') === '0')) {
+    const retryAfter = headers.get('retry-after')
+    const seconds = retryAfter && /^\d+$/.test(retryAfter) ? Number(retryAfter) : NaN
+    const reset = headers.get('x-ratelimit-reset')
+    const resetAt = reset && /^\d+$/.test(reset) ? Number(reset) * 1000 : Date.parse(retryAfter ?? '')
+    const wait = Number.isFinite(seconds)
+      ? `请等待 ${seconds} 秒后重试。`
+      : Number.isFinite(resetAt) && !Number.isNaN(new Date(resetAt).getTime())
+        ? `请在 ${new Intl.DateTimeFormat('zh-CN', { dateStyle: 'short', timeStyle: 'medium' }).format(resetAt)} 后重试。`
+        : '请稍后重试。'
+    return new Error(`${action}：GitHub 请求被限流（HTTP ${status}）。${wait}请勿连续点击重试。`)
+  }
+  if (status === 403) return new Error(`${action}：GitHub 拒绝访问（HTTP 403）。请检查当前代理或网络，稍后重新检查更新。`)
+  if (status === 404) return new Error(`${action}：发布文件尚不可用（HTTP 404）。请稍后重试，或从项目 Releases 下载完整 ZIP。`)
+  return new Error(`${action}失败（HTTP ${status}）。请稍后重试。`)
+}
+
+function locateLatestManifest(): Promise<string> {
+  return new Promise((resolveLocation, reject) => {
+    // Electron net.fetch cannot expose manual redirects; capture the first hop
+    // before following the CDN URL so the manifest stays pinned to its release tag.
+    const request = net.request({ url: latestManifestUrl, method: 'HEAD', redirect: 'manual', cache: 'no-store', headers: requestHeaders })
+    let settled = false
+    const finish = (error?: Error, location?: string): void => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      if (error) reject(error)
+      else resolveLocation(location!)
+      request.abort()
+    }
+    const timer = setTimeout(() => finish(new Error('定位最新正式版本超时。请检查代理或网络后重试。')), 30_000)
+    request.on('redirect', (_status, _method, location) => finish(undefined, location))
+    request.on('response', (response) => {
+      const headers = new Headers()
+      for (const [name, value] of Object.entries(response.headers)) if (value) headers.set(name, Array.isArray(value) ? value.join(', ') : value)
+      finish(response.statusCode === 200
+        ? new Error('GitHub 最新正式版本地址无效。请从项目 Releases 下载完整 ZIP。')
+        : httpError(response.statusCode, headers, '定位最新正式版本'))
+    })
+    request.on('error', () => finish(new Error('无法连接 GitHub 更新源。请检查代理或网络后重试。')))
+    // A redirected HEAD request may emit close before redirect; errors and the
+    // deadline above cover failed requests without rejecting a valid first hop.
+    request.end()
+  })
+}
+
 async function fetchJson(url: string): Promise<unknown> {
   const response = await net.fetch(url, {
-    headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'Ashes-of-Pantheon-QA-Tool' },
+    headers: requestHeaders, cache: 'no-store',
     signal: AbortSignal.timeout(30_000)
   })
-  if (!response.ok) throw new Error(`GitHub 更新检查失败：${response.status}`)
+  if (!response.ok) {
+    await response.body?.cancel()
+    throw httpError(response.status, response.headers, '读取更新清单')
+  }
   const text = await response.text()
   if (text.length > 4 * 1024 ** 2) throw new Error('更新清单过大。')
-  return JSON.parse(text)
+  try { return JSON.parse(text) }
+  catch { throw new Error('更新清单不是有效的 JSON。请检查代理或网络后重新检查更新。') }
 }
 
 async function getLatestRelease(): Promise<PortableRelease> {
-  const release = await fetchJson(releasesApiUrl) as { tag_name?: string; draft?: boolean; prerelease?: boolean; assets?: Array<{ name: string }> }
-  const version = release.tag_name?.replace(/^v/, '') ?? ''
-  if (!/^\d+\.\d+\.\d+$/.test(version) || release.draft || release.prerelease) throw new Error('GitHub 正式版本无效。')
-  if (!release.assets?.some((asset) => asset.name === 'update.json')) throw new Error('该版本没有 ZIP 更新清单。请从 GitHub Releases 下载完整 ZIP。')
-  const index = validateRelease(await fetchJson(assetUrl(version, 'update.json')) as PortableRelease)
-  if (index.version !== version || ![index.full, ...index.deltas].every((asset) => release.assets?.some((item) => item.name === asset.name))) throw new Error('GitHub ZIP 发布文件不完整。')
+  const location = await locateLatestManifest()
+  const target = new URL(location, latestManifestUrl)
+  const version = target.pathname.split('/').at(-2)?.replace(/^v/, '') ?? ''
+  if (!/^\d+\.\d+\.\d+$/.test(version) || target.href !== assetUrl(version, 'update.json')) {
+    throw new Error('GitHub 最新正式版本地址无效。请从项目 Releases 下载完整 ZIP。')
+  }
+  const index = validateRelease(await fetchJson(target.href) as PortableRelease)
+  if (index.version !== version) throw new Error('GitHub 更新清单与正式版本不一致。请稍后重新检查更新。')
+  for (const asset of [index.full, ...index.deltas]) {
+    const assetResponse = await net.fetch(assetUrl(version, asset.name), {
+      method: 'HEAD', cache: 'no-store', signal: AbortSignal.timeout(30_000)
+    })
+    await assetResponse.body?.cancel()
+    if (!assetResponse.ok) throw httpError(assetResponse.status, assetResponse.headers, '检查 ZIP 发布文件')
+  }
   return index
 }
 
 async function downloadAsset(version: string, asset: UpdateAsset, mode: 'full' | 'delta', progress: (value: UpdateProgress) => void): Promise<Uint8Array> {
   const response = await net.fetch(assetUrl(version, asset.name), { signal: AbortSignal.timeout(30 * 60_000) })
-  if (!response.ok || !response.body) throw new Error(`ZIP 下载失败：${response.status}`)
+  if (!response.ok) {
+    await response.body?.cancel()
+    throw httpError(response.status, response.headers, '下载 ZIP')
+  }
+  if (!response.body) throw new Error('ZIP 下载内容为空。请重新检查更新后重试。')
   const chunks: Uint8Array[] = []
   const reader = response.body.getReader()
   let transferred = 0
