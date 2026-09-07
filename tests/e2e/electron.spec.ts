@@ -40,6 +40,14 @@ test('native preload exposes directory selection and hides demo catalog', async 
       menuBarVisible: BrowserWindow.getAllWindows()[0]?.isMenuBarVisible() ?? true
     }))
     expect(menuState).toEqual({ applicationMenuIsNull: true, menuBarVisible: false })
+    const minimumSize = await app.evaluate(({ BrowserWindow }) => {
+      const window = BrowserWindow.getAllWindows()[0]!
+      window.setSize(800, 600)
+      return { minimum: window.getMinimumSize(), actual: window.getSize() }
+    })
+    expect(minimumSize.minimum).toEqual([1100, 720])
+    expect(minimumSize.actual[0]).toBeGreaterThanOrEqual(1100)
+    expect(minimumSize.actual[1]).toBeGreaterThanOrEqual(720)
     await expect(page.getByRole('heading', { name: '项目与连接' })).toBeVisible()
     await expect(page.getByRole('heading', { name: '应用更新' })).toBeVisible()
     await expect(page.getByText('开发模式不检查更新。')).toBeVisible()
@@ -50,8 +58,7 @@ test('native preload exposes directory selection and hides demo catalog', async 
     await expect(page.getByRole('heading', { name: '未连接战斗实例' })).toBeVisible()
     await expect(page.getByText('67/80')).toHaveCount(0)
 
-    await page.getByRole('button', { name: '玩家' }).click()
-    await expect(page.getByRole('heading', { name: '未连接玩家实例' })).toBeVisible()
+    await expect(page.getByRole('navigation', { name: '主导航' }).getByRole('button', { name: '玩家', exact: true })).toHaveCount(0)
 
     await page.getByRole('button', { name: '卡牌' }).click()
     await expect(page.getByText('尚未同步卡牌目录')).toBeVisible()

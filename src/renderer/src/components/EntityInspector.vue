@@ -1,19 +1,63 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { ArrowDown, ArrowUp, Plus, RotateCcw, Trash2 } from '@lucide/vue'
+import { ArrowDown, ArrowUp, Plus, RefreshCw, RotateCcw, Save, ShieldCheck, Trash2 } from '@lucide/vue'
 import { useQaStore } from '@/stores/qa'
 import type { QaBuff, QaEntity, QaIntentStep } from '@shared/contracts'
 
 const store = useQaStore()
-const activeTab = ref<'properties' | 'buffs' | 'intents'>('properties')
+const activeTab = ref<'properties' | 'blessings' | 'buffs' | 'intents'>('properties')
 const newBuffStacks = ref(1)
 const newBuffDuration = ref(1)
+const blessingBusy = ref(false)
+const propertiesBusy = ref(false)
 
 const entity = computed(() => store.selectedEntity)
 const enemy = computed<QaEntity | null>(() => {
   if (entity.value?.kind !== 'enemy') return null
   return store.battle.entities.find((item) => item.instanceId === entity.value?.instanceId) ?? null
 })
+const tabs = computed<Array<{ id: typeof activeTab.value; label: string }>>(() => [
+  { id: 'properties', label: '属性' },
+  ...(entity.value?.kind === 'player' ? [{ id: 'blessings' as const, label: '祝福' }] : []),
+  { id: 'buffs', label: 'BUFF' },
+  ...(enemy.value ? [{ id: 'intents' as const, label: '意图' }] : [])
+])
+const selectedBlessing = computed(() => store.catalog.blessings.find((item) => item.typeId === store.selectedBlessingTypeId))
+const canAddBlessing = computed(() => !blessingBusy.value && Boolean(selectedBlessing.value)
+  && !store.battle.player.blessings.some((item) => item.typeId === store.selectedBlessingTypeId))
+
+function navigateTabs(event: KeyboardEvent): void {
+  const index = tabs.value.findIndex((tab) => tab.id === activeTab.value)
+  const next = event.key === 'ArrowRight' ? (index + 1) % tabs.value.length
+    : event.key === 'ArrowLeft' ? (index + tabs.value.length - 1) % tabs.value.length
+      : event.key === 'Home' ? 0 : event.key === 'End' ? tabs.value.length - 1 : -1
+  if (next < 0) return
+  event.preventDefault()
+  activeTab.value = tabs.value[next]!.id
+  ;(event.currentTarget as HTMLElement).parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus()
+}
+
+async function addBlessing(): Promise<void> {
+  if (!canAddBlessing.value || !selectedBlessing.value) return
+  blessingBusy.value = true
+  try {
+    if (store.connectionStatus === 'connected') await store.addBlessing(selectedBlessing.value.typeId)
+    else if (store.connectionStatus === 'demo') store.battle.player.blessings.push({ ...selectedBlessing.value })
+  } catch (error) {
+    store.showNotice(error instanceof Error ? error.message : '祝福添加失败，请刷新后重试。', 'error')
+  } finally { blessingBusy.value = false }
+}
+
+async function removeBlessing(typeId: string): Promise<void> {
+  if (blessingBusy.value || !window.confirm('从当前会话移除这个祝福？')) return
+  blessingBusy.value = true
+  try {
+    if (store.connectionStatus === 'connected') await store.removeBlessing(typeId)
+    else if (store.connectionStatus === 'demo') store.battle.player.blessings = store.battle.player.blessings.filter((item) => item.typeId !== typeId)
+  } catch (error) {
+    store.showNotice(error instanceof Error ? error.message : '祝福移除失败，请刷新后重试。', 'error')
+  } finally { blessingBusy.value = false }
+}
 
 const targetBuffs = computed<QaBuff[]>(() => {
   if (entity.value?.kind === 'player') return store.battle.player.buffs
@@ -21,7 +65,7 @@ const targetBuffs = computed<QaBuff[]>(() => {
 })
 
 watch(entity, () => {
-  if (activeTab.value === 'intents' && entity.value?.kind !== 'enemy') activeTab.value = 'properties'
+  if (!tabs.value.some((tab) => tab.id === activeTab.value)) activeTab.value = 'properties'
 })
 
 function commitHealth(): void {
@@ -95,11 +139,20 @@ function clearIntents(): void {
 }
 
 async function applyProperties(): Promise<void> {
-  if (entity.value?.kind === 'player') {
-    await store.applyPlayer()
-  } else if (enemy.value) {
-    await store.applyEnemy(enemy.value)
-  }
+  if (propertiesBusy.value) return
+  propertiesBusy.value = true
+  try {
+    commitHealth()
+    if (entity.value?.kind === 'player') {
+      if (!store.unsafeValues) {
+        store.battle.player.maxCost = Math.max(0, store.battle.player.maxCost)
+        store.battle.player.currentCost = Math.min(Math.max(0, store.battle.player.currentCost), store.battle.player.maxCost)
+      }
+      await store.applyPlayer()
+    } else if (enemy.value) await store.applyEnemy(enemy.value)
+  } catch (error) {
+    store.showNotice(error instanceof Error ? error.message : '属性修改失败，请刷新后重试。', 'error')
+  } finally { propertiesBusy.value = false }
 }
 
 async function applyIntentSequence(): Promise<void> {
@@ -108,7 +161,7 @@ async function applyIntentSequence(): Promise<void> {
 </script>
 
 <template>
-  <aside class="flex h-full min-h-0 flex-col border-l border-white/10 bg-[#19181b]" aria-label="对象检查器">
+  <aside class="flex h-full min-h-0 min-w-0 flex-col border-l border-white/10 bg-[#19181b]" aria-label="对象检查器">
     <template v-if="entity">
       <div class="shrink-0 border-b border-white/9 px-4 pb-4 pt-5">
         <div class="flex items-start justify-between gap-3">
@@ -122,27 +175,26 @@ async function applyIntentSequence(): Promise<void> {
         </div>
       </div>
 
-      <div class="grid shrink-0 grid-cols-3 border-b border-white/9" role="tablist" aria-label="对象详情">
+      <div class="grid shrink-0 auto-cols-fr grid-flow-col border-b border-white/9" role="tablist" aria-label="对象详情">
         <button
-          v-for="tab in [
-            { id: 'properties', label: '属性' },
-            { id: 'buffs', label: 'BUFF' },
-            { id: 'intents', label: '意图' }
-          ]"
+          v-for="tab in tabs"
           :key="tab.id"
           type="button"
           role="tab"
-          class="h-10 border-b-2 border-transparent text-[12px] text-white/42 hover:bg-white/3 hover:text-white/65 disabled:cursor-not-allowed disabled:opacity-25"
-          :class="activeTab === tab.id ? 'border-[#c44536] bg-white/3 text-white/82' : ''"
+          :id="`entity-${tab.id}-tab`"
+          :aria-controls="`entity-${tab.id}-panel`"
+          :tabindex="activeTab === tab.id ? 0 : -1"
+          class="h-10 border-b-2 text-[12px] hover:bg-white/3"
+          :class="activeTab === tab.id ? 'border-[#c44536] bg-white/3 text-white/82' : 'border-transparent text-white/42 hover:text-white/65'"
           :aria-selected="activeTab === tab.id"
-          :disabled="tab.id === 'intents' && entity.kind !== 'enemy'"
-          @click="activeTab = tab.id as typeof activeTab"
+          @click="activeTab = tab.id"
+          @keydown="navigateTabs"
         >
           {{ tab.label }}
         </button>
       </div>
 
-      <div class="min-h-0 flex-1 overflow-y-auto p-4">
+      <div class="min-h-0 flex-1 overflow-y-auto p-4" role="tabpanel" :id="`entity-${activeTab}-panel`" :aria-labelledby="`entity-${activeTab}-tab`">
         <div v-if="activeTab === 'properties'" class="space-y-5">
           <template v-if="entity.kind === 'player'">
             <div class="grid grid-cols-2 gap-3">
@@ -203,9 +255,46 @@ async function applyIntentSequence(): Promise<void> {
             </span>
           </label>
 
-          <button v-if="entity.kind !== 'equipment'" type="button" class="primary-button w-full" @click="applyProperties">应用属性</button>
+          <button v-if="entity.kind !== 'equipment'" type="button" class="primary-button w-full" :disabled="propertiesBusy" @click="applyProperties">
+            <RefreshCw v-if="propertiesBusy" :size="14" class="animate-spin" aria-hidden="true" />
+            <Save v-else :size="14" aria-hidden="true" />{{ propertiesBusy ? '应用中…' : '应用属性' }}
+          </button>
           <p v-if="store.lastOperationMessage" class="m-0 text-[10px] leading-5 text-[#d5b75f]" aria-live="polite">{{ store.lastOperationMessage }}</p>
         </div>
+
+          <section v-else-if="activeTab === 'blessings' && entity.kind === 'player'" aria-labelledby="blessings-heading">
+            <div class="flex items-center gap-2">
+              <ShieldCheck :size="16" class="text-[#9f92d6]" aria-hidden="true" />
+              <h3 id="blessings-heading" class="m-0 text-[13px] font-bold text-white/78">持有祝福</h3>
+              <span class="ml-auto utility-font text-[11px] text-white/45">{{ store.battle.player.blessings.length }}</span>
+            </div>
+            <div class="mt-3 flex min-w-0 gap-2">
+              <select v-model="store.selectedBlessingTypeId" name="blessing-type" class="field min-w-0 flex-1 px-2 text-[12px]" aria-label="选择祝福" :disabled="blessingBusy || !store.catalog.blessings.length">
+                <option v-if="!store.catalog.blessings.length" value="">没有可用祝福</option>
+                <option v-for="blessing in store.catalog.blessings" :key="blessing.typeId" :value="blessing.typeId">{{ blessing.name }} · {{ blessing.typeId }}</option>
+              </select>
+              <button type="button" class="icon-button shrink-0" title="添加祝福" aria-label="添加祝福" :disabled="!canAddBlessing" @click="addBlessing">
+                <RefreshCw v-if="blessingBusy" :size="15" class="animate-spin" aria-hidden="true" />
+                <Plus v-else :size="15" aria-hidden="true" />
+              </button>
+            </div>
+            <div v-if="selectedBlessing" class="mt-2 min-w-0 text-[11px] text-white/65">
+              <span class="block break-words">{{ selectedBlessing.name }}</span>
+              <span class="utility-font mt-0.5 block break-all text-[10px] text-white/45" translate="no">{{ selectedBlessing.typeId }}</span>
+            </div>
+            <ul v-if="store.battle.player.blessings.length" class="m-0 mt-3 space-y-2 p-0">
+              <li v-for="blessing in store.battle.player.blessings" :key="blessing.typeId" class="flex list-none items-start gap-2 border border-white/10 bg-white/[0.025] p-3">
+                <div class="min-w-0 flex-1">
+                  <p class="m-0 break-words text-[12px] font-semibold text-white/80">{{ blessing.name }}</p>
+                  <p class="utility-font m-0 mt-1 break-all text-[10px] text-white/45" translate="no">{{ blessing.typeId }}</p>
+                  <p class="m-0 mt-1 break-words text-[11px] leading-5 text-white/50">{{ blessing.description }}</p>
+                </div>
+                <button type="button" class="icon-button !h-8 !w-8 shrink-0" :title="`移除 ${blessing.name}`" :aria-label="`移除 ${blessing.name}`" :disabled="blessingBusy" @click="removeBlessing(blessing.typeId)"><Trash2 :size="14" aria-hidden="true" /></button>
+              </li>
+            </ul>
+            <p v-else class="m-0 py-5 text-center text-[11px] text-white/40">当前没有祝福</p>
+            <p v-if="store.lastOperationMessage" class="m-0 break-words text-[10px] leading-5 text-[#d5b75f]" aria-live="polite">{{ store.lastOperationMessage }}</p>
+          </section>
 
         <div v-else-if="activeTab === 'buffs'" class="space-y-4">
           <div v-if="entity.kind !== 'equipment'" class="space-y-2 border-b border-white/9 pb-4">

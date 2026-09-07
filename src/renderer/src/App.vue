@@ -7,7 +7,6 @@ import ConnectionBar from '@/components/ConnectionBar.vue'
 import GlobalNotice from '@/components/GlobalNotice.vue'
 import BattleWorkspace from '@/views/BattleWorkspace.vue'
 import CardsWorkspace from '@/views/CardsWorkspace.vue'
-import PlayerWorkspace from '@/views/PlayerWorkspace.vue'
 import SetupWorkspace from '@/views/SetupWorkspace.vue'
 import { useQaStore } from '@/stores/qa'
 import type { WorkspaceId } from '@shared/contracts'
@@ -18,7 +17,6 @@ const workspaceRoot = ref<HTMLElement | null>(null)
 const workspaceComponents: Record<WorkspaceId, Component> = {
   battle: BattleWorkspace,
   cards: CardsWorkspace,
-  player: PlayerWorkspace,
   setup: SetupWorkspace
 }
 

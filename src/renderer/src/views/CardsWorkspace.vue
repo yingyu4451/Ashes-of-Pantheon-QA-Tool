@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { ArrowDownAZ, ArrowUpAZ, Search, X } from '@lucide/vue'
+import { ArrowDownAZ, ArrowUpAZ, MousePointer2, Search, X } from '@lucide/vue'
 import CardTile from '@/components/CardTile.vue'
 import { useQaStore } from '@/stores/qa'
 import type { CardCategory, QaCard, Rarity } from '@shared/contracts'
@@ -57,8 +57,7 @@ const rarities: Array<{ value: Rarity; label: string }> = [
   <section class="flex h-full min-h-0 flex-col" aria-labelledby="cards-title">
     <div class="flex shrink-0 flex-wrap items-end justify-between gap-4 border-b border-white/9 px-6 py-5">
       <div>
-        <p class="utility-font m-0 text-[10px] text-[#c6a451]/70">CARD REGISTRY</p>
-        <h1 id="cards-title" class="display-font m-0 mt-1 text-[26px] text-[#eee7dc]">卡牌目录</h1>
+        <h1 id="cards-title" class="display-font m-0 text-[26px] text-[#eee7dc]">卡牌目录</h1>
       </div>
 
       <div class="flex min-w-0 flex-1 items-center justify-end gap-2 max-[640px]:w-full max-[640px]:flex-none">
@@ -119,8 +118,11 @@ const rarities: Array<{ value: Rarity; label: string }> = [
     </div>
 
     <div class="min-h-0 flex-1 overflow-y-auto px-6 py-5">
-      <div class="mb-4 flex items-center justify-between text-[11px] text-white/35">
+      <div class="mb-4 flex flex-wrap items-center justify-between gap-2 text-[11px] text-white/45">
         <span>显示 {{ store.filteredCards.length }} / {{ store.catalog.cards.length }}</span>
+        <span v-if="store.connectionStatus === 'connected' && store.cardInventoryAvailable" class="flex items-center gap-1.5 text-white/65" title="装备卡左键前往战斗放置，右键删除战场装备">
+          <MousePointer2 :size="13" aria-hidden="true" />左键获取 · 右键删除
+        </span>
         <span v-if="store.connectionStatus !== 'connected'">离线目录</span>
         <span v-else-if="!store.cardInventoryAvailable">当前场景没有可用的卡牌库存</span>
       </div>

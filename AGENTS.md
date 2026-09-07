@@ -30,5 +30,5 @@
 - 修改用户可见的 Vue、React、HTML、CSS、布局、动画、文案、交互状态或前端资源时，额外加载并执行 `frontend-design` 与 `web-design-guidelines`。
 - 使用 `frontend-design` 在实现前确立针对当前项目的视觉方向，并在实现后进行自我审查。
 - 每次前端审查前，获取 `web-design-guidelines` 要求的最新 Web Interface Guidelines。
-- 在有代表性的桌面端与移动端尺寸下验证前端工作，并检查受影响流程中存在的默认、hover、active、focus-visible、disabled、loading、empty 和 error 状态。
+- 工具仅面向桌面端，不新增手机端布局。在有代表性的桌面端尺寸和窗口最小尺寸下验证前端工作，并检查受影响流程中存在的默认、hover、active、focus-visible、disabled、loading、empty 和 error 状态。
 - 只修改后端或桌面端主进程、Updater 内部实现、测试数据、版本号或文档时，不触发前端技能。

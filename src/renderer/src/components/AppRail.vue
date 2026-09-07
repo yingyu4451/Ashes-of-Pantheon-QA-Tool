@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { BookOpen, Boxes, Settings, UserRound } from '@lucide/vue'
+import { BookOpen, Boxes, Settings } from '@lucide/vue'
 import type { Component } from 'vue'
 import type { WorkspaceId } from '@shared/contracts'
 
@@ -9,7 +9,6 @@ const emit = defineEmits<{ select: [workspace: WorkspaceId] }>()
 const items: Array<{ id: WorkspaceId; label: string; icon: Component }> = [
   { id: 'battle', label: '战斗', icon: Boxes },
   { id: 'cards', label: '卡牌', icon: BookOpen },
-  { id: 'player', label: '玩家', icon: UserRound },
   { id: 'setup', label: '连接', icon: Settings }
 ]
 </script>
@@ -38,6 +37,6 @@ const items: Array<{ id: WorkspaceId; label: string; icon: Component }> = [
       </button>
     </div>
 
-    <div class="border-t border-white/8 px-2 py-3 text-center utility-font text-[9px] text-white/25 max-[640px]:hidden">QA 0.1.4</div>
+    <div class="border-t border-white/8 px-2 py-3 text-center utility-font text-[9px] text-white/25 max-[640px]:hidden">QA 0.1.5</div>
   </nav>
 </template>

@@ -1,4 +1,4 @@
-export type WorkspaceId = 'cards' | 'battle' | 'player' | 'setup'
+export type WorkspaceId = 'cards' | 'battle' | 'setup'
 export type ConnectionKind = 'editor' | 'package'
 export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'demo'
 export type CardCategory = 'equipment' | 'placement' | 'directional' | 'target' | 'effect'

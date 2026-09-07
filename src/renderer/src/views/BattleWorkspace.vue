@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { Box, Cable, Crosshair, PackageOpen, Shield, Skull, UserRound } from '@lucide/vue'
+import { Box, Cable, Crosshair, PackageOpen, RefreshCw, Shield, Skull, UserRound } from '@lucide/vue'
 import EntityInspector from '@/components/EntityInspector.vue'
 import { useQaStore } from '@/stores/qa'
 import type { GridPoint, QaEntity } from '@shared/contracts'
 
 const store = useQaStore()
 const placementMessage = ref('')
+const placementBusy = ref(false)
+const selectedEquipment = computed(() => store.catalog.equipment.find((item) => item.typeId === store.selectedEquipmentTypeId))
 const gridViewport = ref<HTMLElement | null>(null)
 const gridCellSize = ref(0)
 
@@ -81,8 +83,13 @@ function selectEntity(entity: QaEntity): void {
 }
 
 async function placeEquipment(): Promise<void> {
-  placementMessage.value = await store.placeEquipment() ? '装备已放置到选定格。' : (store.lastOperationMessage || '选定格不可放置装备。')
-  setTimeout(() => { placementMessage.value = '' }, 2200)
+  if (placementBusy.value || !selectedEquipment.value || !store.selectedCell) return
+  placementBusy.value = true
+  try {
+    placementMessage.value = await store.placeEquipment() ? '装备已放置到选定格。' : (store.lastOperationMessage || '选定格不可放置装备。')
+  } catch (error) {
+    placementMessage.value = error instanceof Error ? error.message : '装备放置失败，请刷新后重试。'
+  } finally { placementBusy.value = false }
 }
 </script>
 
@@ -96,12 +103,11 @@ async function placeEquipment(): Promise<void> {
     </div>
   </section>
 
-  <section v-else class="grid h-full min-h-0 grid-cols-[220px_minmax(440px,1fr)_320px] max-[1180px]:grid-cols-[190px_minmax(400px,1fr)_290px] max-[980px]:grid-cols-[180px_minmax(0,1fr)] max-[640px]:grid-cols-1" aria-labelledby="battle-title">
+  <section v-else class="battle-workspace" aria-labelledby="battle-title">
     <h1 id="battle-title" class="sr-only">战斗工作台</h1>
-    <aside class="flex min-h-0 flex-col border-r border-white/10 bg-[#171619] max-[640px]:hidden">
+    <aside class="flex min-h-0 min-w-0 flex-col border-r border-white/10 bg-[#171619]">
       <div class="shrink-0 border-b border-white/9 px-4 py-5">
-        <p class="utility-font m-0 text-[10px] text-[#c6a451]/65">LIVE OBJECTS</p>
-        <p class="display-font m-0 mt-1 text-[23px] text-[#eee7dc]" aria-hidden="true">战斗工作台</p>
+        <p class="display-font m-0 text-[23px] text-[#eee7dc]" aria-hidden="true">战斗工作台</p>
       </div>
 
       <div class="min-h-0 flex-1 overflow-y-auto p-2">
@@ -132,13 +138,19 @@ async function placeEquipment(): Promise<void> {
       <div class="shrink-0 border-t border-white/9 p-3">
         <label class="block text-[10px] text-white/38">
           放置装备
-          <select v-model="store.selectedEquipmentTypeId" name="placement-equipment" class="field mt-1 w-full px-2 text-[11px]">
-            <option v-for="item in store.catalog.equipment" :key="item.typeId" :value="item.typeId">{{ item.name }}</option>
+          <select v-model="store.selectedEquipmentTypeId" name="placement-equipment" aria-label="放置装备" class="field mt-1 w-full min-w-0 px-2 text-[11px]" :disabled="placementBusy || !store.catalog.equipment.length">
+            <option v-if="!store.catalog.equipment.length" value="">没有可用装备</option>
+            <option v-for="item in store.catalog.equipment" :key="item.typeId" :value="item.typeId">{{ item.name }} · {{ item.typeId }}</option>
           </select>
         </label>
-        <button type="button" class="primary-button mt-2 w-full" :disabled="!store.selectedCell" @click="placeEquipment">
-          <Box :size="14" aria-hidden="true" />
-          放置到 {{ store.selectedCell ? `${store.selectedCell.x}, ${store.selectedCell.y}` : '未选格' }}
+        <div v-if="selectedEquipment" class="mt-2 min-w-0 text-[11px] text-white/65">
+          <span class="block break-words">{{ selectedEquipment.name }}</span>
+          <span class="utility-font mt-0.5 block break-all text-[10px] text-white/45" translate="no">{{ selectedEquipment.typeId }}</span>
+        </div>
+        <button type="button" class="primary-button mt-2 w-full" :disabled="placementBusy || !store.selectedCell || !selectedEquipment" @click="placeEquipment">
+          <RefreshCw v-if="placementBusy" :size="14" class="shrink-0 animate-spin" aria-hidden="true" />
+          <Box v-else :size="14" class="shrink-0" aria-hidden="true" />
+          {{ placementBusy ? '放置中…' : `放置到 ${store.selectedCell ? `${store.selectedCell.x}, ${store.selectedCell.y}` : '未选格'}` }}
         </button>
         <p class="m-0 mt-2 min-h-4 text-center text-[10px] text-[#d7ba63]" aria-live="polite">{{ placementMessage }}</p>
       </div>
@@ -200,6 +212,20 @@ async function placeEquipment(): Promise<void> {
       </div>
     </main>
 
-    <EntityInspector class="max-[980px]:hidden" />
+    <EntityInspector />
   </section>
 </template>
+
+<style scoped>
+.battle-workspace {
+  display: grid;
+  height: 100%;
+  min-height: 0;
+  grid-template-columns: 210px minmax(0, 1fr) 340px;
+}
+
+@media (max-width: 1180px) {
+  .battle-workspace { grid-template-columns: 190px minmax(0, 1fr) 320px; }
+}
+
+</style>
