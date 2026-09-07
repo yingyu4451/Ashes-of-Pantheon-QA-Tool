@@ -3,12 +3,12 @@ import type { BridgeRequest, OperationResult, QaBattleSnapshot, QaCatalog } from
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
-    const controls = { failBlessing: false, delayBlessing: false, empty: false, longNames: false, finish: () => undefined as void }
+    const controls = { failBlessing: false, delayBlessing: false, failPlacement: false, empty: false, longNames: false, finish: () => undefined as void }
     Object.assign(window, { inspectorTest: controls })
     const instance = { instanceId: 'inspector-test', kind: 'editor', processId: 4567, displayName: 'Unity Inspector Test', gameVersion: '1.0', sceneName: 'Battle', port: 12345, lastSeenAt: new Date().toISOString() }
     const catalog: QaCatalog = {
       cards: [{ typeId: 'Card01', name: '测试手牌', description: '造成伤害。', category: 'effect', cost: 2, rarity: 'common', tags: [] }],
-      equipment: [{ typeId: 'Equipment01', name: '测试长剑' }], buffs: [],
+      equipment: [{ typeId: 'Equipment01', name: '测试长剑' }, { typeId: 'Equipment02', name: '测试圆盾' }], buffs: [],
       blessings: [{ typeId: 'Blessing01', name: '试炼祝福', description: '提高生命上限。' }],
       intents: [{ typeId: 'Attack01', name: '普通攻击', description: '', parameters: [] }]
     }
@@ -40,6 +40,12 @@ test.beforeEach(async ({ page }) => {
           else battle.player.blessings = battle.player.blessings.filter((item) => item.typeId !== typeId)
         }
         if (request.path === '/api/player') Object.assign(battle.player, request.body)
+        if (request.path === '/api/gm') {
+          if (controls.failPlacement) return { ok: false, message: '格子被占用。' }
+          const [, typeId, x, y] = (request.body as { command: string }).command.split(' ')
+          if (typeId !== 'Equipment01') throw new Error('Unexpected equipment TypeId')
+          battle.entities.push({ instanceId: `equipment#${battle.entities.length}`, typeId, name: '测试长剑', kind: 'equipment', position: { x: Number(x), y: Number(y) }, buffs: [] })
+        }
         return { ok: true, message: '修改已同步。', data: { success: true, message: '修改已同步。' } as T }
       },
       readCatalogCache: async () => null,
@@ -123,13 +129,60 @@ test('long names and TypeIds wrap within battle panels', async ({ page }) => {
 })
 
 test('blessing and equipment choices retain both names and TypeIds', async ({ page }) => {
-  await expect(page.getByLabel('放置装备', { exact: true }).locator('option')).toHaveText('测试长剑 · Equipment01')
+  await expect(page.getByRole('combobox', { name: '放置装备', exact: true })).toHaveValue('测试长剑 · Equipment01')
   await expect(page.getByText('Equipment01', { exact: true })).toBeVisible()
   await page.getByRole('button', { name: '选择 主角', exact: true }).click()
   await page.getByRole('tab', { name: '祝福', exact: true }).click()
   await expect(page.getByLabel('选择祝福').locator('option')).toHaveText('试炼祝福 · Blessing01')
   await expect(page.getByRole('complementary', { name: '对象检查器' }).getByText('Blessing01', { exact: true })).toBeVisible()
   await expect(page.getByText('LIVE OBJECTS', { exact: true })).toHaveCount(0)
+})
+
+test('equipment dropdown searches Chinese names and TypeIds and supports keyboard selection', async ({ page }) => {
+  const picker = page.getByRole('combobox', { name: '放置装备', exact: true })
+  await picker.focus()
+  await page.keyboard.press('ArrowUp')
+  await page.keyboard.press('Enter')
+  await expect(picker).toHaveValue('测试圆盾 · Equipment02')
+  await picker.fill('长剑')
+  await expect(page.getByRole('option', { name: '测试长剑 Equipment01', exact: true })).toBeVisible()
+  await page.screenshot({ path: 'test-results/equipment-search-desktop.png' })
+  await picker.fill('equipment01')
+  await page.keyboard.press('ArrowDown')
+  await page.keyboard.press('Enter')
+  await expect(picker).toHaveValue('测试长剑 · Equipment01')
+  await expect(page.getByRole('listbox', { name: '装备目录' })).toHaveCount(0)
+  await picker.fill('不存在')
+  await expect(page.getByText('没有匹配的装备', { exact: true })).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(picker).toHaveValue('测试长剑 · Equipment01')
+})
+
+test('desktop controls use the daisyUI theme and the grid is named Battle Map', async ({ page }) => {
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'ashes')
+  await expect(page.getByRole('heading', { name: '战斗地图', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '选择 主角', exact: true }).click()
+  await expect(page.getByRole('button', { name: '应用属性', exact: true })).toHaveClass(/btn-primary/)
+  await expect(page.getByLabel('当前生命', { exact: true })).toHaveClass(/input/)
+  await expect(page.getByRole('tablist', { name: '对象详情' })).toHaveClass(/tabs/)
+})
+
+test('placed equipment appears in both the object list and battle map after refreshing', async ({ page }) => {
+  await page.getByRole('button', { name: '选择格 -2, 1', exact: true }).click()
+  await page.getByRole('button', { name: '放置到 -2, 1', exact: true }).click()
+  const equipment = page.getByTestId('battle-grid').getByRole('button', { name: '选择 测试长剑', exact: true })
+  await expect(equipment).toBeVisible()
+  await expect(page.getByRole('complementary', { name: '场上对象' }).getByRole('button', { name: /测试长剑.*Equipment01/ })).toBeVisible()
+  await equipment.click()
+  const inspector = page.getByRole('complementary', { name: '对象检查器' })
+  await expect(inspector.getByRole('heading', { name: '测试长剑', exact: true })).toBeVisible()
+  await expect(inspector.getByText('Equipment01', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '关闭提示' }).click()
+  await page.screenshot({ path: 'test-results/placed-equipment-desktop.png' })
+  await page.evaluate(() => Object.assign((window as unknown as { inspectorTest: object }).inspectorTest, { failPlacement: true }))
+  await page.getByRole('button', { name: '选择格 -1, 1', exact: true }).click()
+  await page.getByRole('button', { name: '放置到 -1, 1', exact: true }).click()
+  await expect(equipment).toHaveCount(1)
 })
 
 test('battle properties remain reachable at supported desktop sizes', async ({ page }) => {

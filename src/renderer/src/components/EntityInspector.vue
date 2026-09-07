@@ -175,7 +175,7 @@ async function applyIntentSequence(): Promise<void> {
         </div>
       </div>
 
-      <div class="grid shrink-0 auto-cols-fr grid-flow-col border-b border-white/9" role="tablist" aria-label="对象详情">
+      <div class="tabs grid shrink-0 auto-cols-fr grid-flow-col border-b border-white/9" role="tablist" aria-label="对象详情">
         <button
           v-for="tab in tabs"
           :key="tab.id"
@@ -184,8 +184,8 @@ async function applyIntentSequence(): Promise<void> {
           :id="`entity-${tab.id}-tab`"
           :aria-controls="`entity-${tab.id}-panel`"
           :tabindex="activeTab === tab.id ? 0 : -1"
-          class="h-10 border-b-2 text-[12px] hover:bg-white/3"
-          :class="activeTab === tab.id ? 'border-[#c44536] bg-white/3 text-white/82' : 'border-transparent text-white/42 hover:text-white/65'"
+          class="tab h-10 border-b-2 text-[12px] hover:bg-white/3"
+          :class="activeTab === tab.id ? 'tab-active border-[#c44536] bg-white/3 text-white/82' : 'border-transparent text-white/42 hover:text-white/65'"
           :aria-selected="activeTab === tab.id"
           @click="activeTab = tab.id"
           @keydown="navigateTabs"
@@ -200,19 +200,19 @@ async function applyIntentSequence(): Promise<void> {
             <div class="grid grid-cols-2 gap-3">
               <label class="text-[11px] text-white/43">
                 当前生命
-                <input v-model.number="store.battle.player.currentHp" type="number" name="player-current-hp" autocomplete="off" class="field mt-1 w-full px-2 utility-font text-[13px]" @blur="commitHealth" />
+                <input v-model.number="store.battle.player.currentHp" type="number" name="player-current-hp" autocomplete="off" class="input input-sm mt-1 w-full px-2 utility-font text-[13px]" @blur="commitHealth" />
               </label>
               <label class="text-[11px] text-white/43">
                 最大生命
-                <input v-model.number="store.battle.player.maxHp" type="number" name="player-max-hp" autocomplete="off" class="field mt-1 w-full px-2 utility-font text-[13px]" @blur="commitHealth" />
+                <input v-model.number="store.battle.player.maxHp" type="number" name="player-max-hp" autocomplete="off" class="input input-sm mt-1 w-full px-2 utility-font text-[13px]" @blur="commitHealth" />
               </label>
               <label class="text-[11px] text-white/43">
                 当前费用
-                <input v-model.number="store.battle.player.currentCost" type="number" name="player-current-cost" autocomplete="off" class="field mt-1 w-full px-2 utility-font text-[13px]" />
+                <input v-model.number="store.battle.player.currentCost" type="number" name="player-current-cost" autocomplete="off" class="input input-sm mt-1 w-full px-2 utility-font text-[13px]" />
               </label>
               <label class="text-[11px] text-white/43">
                 最大费用
-                <input v-model.number="store.battle.player.maxCost" type="number" name="player-max-cost" autocomplete="off" class="field mt-1 w-full px-2 utility-font text-[13px]" />
+                <input v-model.number="store.battle.player.maxCost" type="number" name="player-max-cost" autocomplete="off" class="input input-sm mt-1 w-full px-2 utility-font text-[13px]" />
               </label>
             </div>
           </template>
@@ -221,16 +221,16 @@ async function applyIntentSequence(): Promise<void> {
             <div class="grid grid-cols-2 gap-3">
               <label class="text-[11px] text-white/43">
                 当前生命
-                <input v-model.number="enemy.currentHp" type="number" name="enemy-current-hp" autocomplete="off" class="field mt-1 w-full px-2 utility-font text-[13px]" @blur="commitHealth" />
+                <input v-model.number="enemy.currentHp" type="number" name="enemy-current-hp" autocomplete="off" class="input input-sm mt-1 w-full px-2 utility-font text-[13px]" @blur="commitHealth" />
               </label>
               <label class="text-[11px] text-white/43">
                 最大生命
-                <input v-model.number="enemy.maxHp" type="number" name="enemy-max-hp" autocomplete="off" class="field mt-1 w-full px-2 utility-font text-[13px]" @blur="commitHealth" />
+                <input v-model.number="enemy.maxHp" type="number" name="enemy-max-hp" autocomplete="off" class="input input-sm mt-1 w-full px-2 utility-font text-[13px]" @blur="commitHealth" />
               </label>
             </div>
             <label class="block text-[11px] text-white/43">
               攻击力
-              <input v-model.number="enemy.attack" type="number" name="enemy-attack" autocomplete="off" class="field mt-1 w-full px-2 utility-font text-[13px]" />
+              <input v-model.number="enemy.attack" type="number" name="enemy-attack" autocomplete="off" class="input input-sm mt-1 w-full px-2 utility-font text-[13px]" />
             </label>
           </template>
 
@@ -248,14 +248,14 @@ async function applyIntentSequence(): Promise<void> {
           </template>
 
           <label v-if="entity.kind !== 'equipment'" class="flex items-start gap-3 border-t border-white/9 pt-4 text-[11px] text-white/50">
-            <input v-model="store.unsafeValues" type="checkbox" name="entity-unsafe-values" class="mt-0.5 accent-[#c44536]" />
+            <input v-model="store.unsafeValues" type="checkbox" name="entity-unsafe-values" class="checkbox checkbox-xs checkbox-primary mt-0.5" />
             <span>
               允许异常值
               <small class="mt-1 block leading-5 text-white/30">关闭时，生命值保持在 0 到最大值之间。</small>
             </span>
           </label>
 
-          <button v-if="entity.kind !== 'equipment'" type="button" class="primary-button w-full" :disabled="propertiesBusy" @click="applyProperties">
+          <button v-if="entity.kind !== 'equipment'" type="button" class="btn btn-primary btn-sm w-full" :disabled="propertiesBusy" @click="applyProperties">
             <RefreshCw v-if="propertiesBusy" :size="14" class="animate-spin" aria-hidden="true" />
             <Save v-else :size="14" aria-hidden="true" />{{ propertiesBusy ? '应用中…' : '应用属性' }}
           </button>
@@ -269,11 +269,11 @@ async function applyIntentSequence(): Promise<void> {
               <span class="ml-auto utility-font text-[11px] text-white/45">{{ store.battle.player.blessings.length }}</span>
             </div>
             <div class="mt-3 flex min-w-0 gap-2">
-              <select v-model="store.selectedBlessingTypeId" name="blessing-type" class="field min-w-0 flex-1 px-2 text-[12px]" aria-label="选择祝福" :disabled="blessingBusy || !store.catalog.blessings.length">
+              <select v-model="store.selectedBlessingTypeId" name="blessing-type" class="select select-sm min-w-0 flex-1 px-2 text-[12px]" aria-label="选择祝福" :disabled="blessingBusy || !store.catalog.blessings.length">
                 <option v-if="!store.catalog.blessings.length" value="">没有可用祝福</option>
                 <option v-for="blessing in store.catalog.blessings" :key="blessing.typeId" :value="blessing.typeId">{{ blessing.name }} · {{ blessing.typeId }}</option>
               </select>
-              <button type="button" class="icon-button shrink-0" title="添加祝福" aria-label="添加祝福" :disabled="!canAddBlessing" @click="addBlessing">
+              <button type="button" class="btn btn-neutral btn-square btn-sm shrink-0" title="添加祝福" aria-label="添加祝福" :disabled="!canAddBlessing" @click="addBlessing">
                 <RefreshCw v-if="blessingBusy" :size="15" class="animate-spin" aria-hidden="true" />
                 <Plus v-else :size="15" aria-hidden="true" />
               </button>
@@ -289,7 +289,7 @@ async function applyIntentSequence(): Promise<void> {
                   <p class="utility-font m-0 mt-1 break-all text-[10px] text-white/45" translate="no">{{ blessing.typeId }}</p>
                   <p class="m-0 mt-1 break-words text-[11px] leading-5 text-white/50">{{ blessing.description }}</p>
                 </div>
-                <button type="button" class="icon-button !h-8 !w-8 shrink-0" :title="`移除 ${blessing.name}`" :aria-label="`移除 ${blessing.name}`" :disabled="blessingBusy" @click="removeBlessing(blessing.typeId)"><Trash2 :size="14" aria-hidden="true" /></button>
+                <button type="button" class="btn btn-neutral btn-square btn-sm !h-8 !w-8 shrink-0" :title="`移除 ${blessing.name}`" :aria-label="`移除 ${blessing.name}`" :disabled="blessingBusy" @click="removeBlessing(blessing.typeId)"><Trash2 :size="14" aria-hidden="true" /></button>
               </li>
             </ul>
             <p v-else class="m-0 py-5 text-center text-[11px] text-white/40">当前没有祝福</p>
@@ -300,21 +300,21 @@ async function applyIntentSequence(): Promise<void> {
           <div v-if="entity.kind !== 'equipment'" class="space-y-2 border-b border-white/9 pb-4">
             <label class="block text-[11px] text-white/43">
               BUFF
-              <select v-model="store.selectedBuffTypeId" name="buff-type" class="field mt-1 w-full px-2 text-[12px]">
+              <select v-model="store.selectedBuffTypeId" name="buff-type" class="select select-sm mt-1 w-full px-2 text-[12px]">
                 <option v-for="buff in store.catalog.buffs" :key="buff.typeId" :value="buff.typeId">{{ buff.name }} · {{ buff.typeId }}</option>
               </select>
             </label>
             <div class="grid grid-cols-2 gap-2">
               <label class="text-[11px] text-white/43">
                 层数
-                <input v-model.number="newBuffStacks" type="number" name="buff-stacks" min="1" autocomplete="off" class="field mt-1 w-full px-2 utility-font text-[12px]" />
+                <input v-model.number="newBuffStacks" type="number" name="buff-stacks" min="1" autocomplete="off" class="input input-sm mt-1 w-full px-2 utility-font text-[12px]" />
               </label>
               <label class="text-[11px] text-white/43">
                 回合
-                <input v-model.number="newBuffDuration" type="number" name="buff-duration" min="1" autocomplete="off" class="field mt-1 w-full px-2 utility-font text-[12px]" />
+                <input v-model.number="newBuffDuration" type="number" name="buff-duration" min="1" autocomplete="off" class="input input-sm mt-1 w-full px-2 utility-font text-[12px]" />
               </label>
             </div>
-            <button type="button" class="primary-button w-full" @click="addBuff">
+            <button type="button" class="btn btn-primary btn-sm w-full" @click="addBuff">
               <Plus :size="14" aria-hidden="true" />
               添加 BUFF
             </button>
@@ -327,7 +327,7 @@ async function applyIntentSequence(): Promise<void> {
                 <p class="m-0 truncate text-[12px] font-semibold text-white/76">{{ buff.name }}</p>
                 <p class="utility-font m-0 mt-0.5 truncate text-[9px] text-white/31">{{ buff.typeId }}<template v-if="buff.remainingTurns"> · {{ buff.remainingTurns }} 回合</template></p>
               </div>
-              <button type="button" class="icon-button !h-8 !w-8" :aria-label="`移除 ${buff.name}`" :title="`移除 ${buff.name}`" @click="removeBuff(buff.instanceId)">
+              <button type="button" class="btn btn-neutral btn-square btn-sm !h-8 !w-8" :aria-label="`移除 ${buff.name}`" :title="`移除 ${buff.name}`" @click="removeBuff(buff.instanceId)">
                 <Trash2 :size="14" aria-hidden="true" />
               </button>
             </div>
@@ -337,10 +337,10 @@ async function applyIntentSequence(): Promise<void> {
 
         <div v-else-if="activeTab === 'intents' && enemy" class="space-y-4">
           <div class="flex gap-2 border-b border-white/9 pb-4">
-            <select v-model="store.selectedIntentTypeId" name="intent-type" class="field min-w-0 flex-1 px-2 text-[12px]" aria-label="选择意图">
+            <select v-model="store.selectedIntentTypeId" name="intent-type" class="select select-sm min-w-0 flex-1 px-2 text-[12px]" aria-label="选择意图">
               <option v-for="intent in store.catalog.intents" :key="intent.typeId" :value="intent.typeId">{{ intent.name }}</option>
             </select>
-            <button type="button" class="icon-button shrink-0" title="添加意图" aria-label="添加意图" @click="addIntent">
+            <button type="button" class="btn btn-neutral btn-square btn-sm shrink-0" title="添加意图" aria-label="添加意图" @click="addIntent">
               <Plus :size="15" aria-hidden="true" />
             </button>
           </div>
@@ -357,26 +357,26 @@ async function applyIntentSequence(): Promise<void> {
                   <p class="m-0 mt-1 text-[10px] text-white/36">{{ intent.summary }}</p>
                 </div>
                 <div class="grid shrink-0 grid-cols-2 gap-1">
-                  <button type="button" class="icon-button !h-7 !w-7" title="上移" aria-label="上移意图" :disabled="index === 0" @click="moveIntent(index, -1)"><ArrowUp :size="12" aria-hidden="true" /></button>
-                  <button type="button" class="icon-button !h-7 !w-7" title="下移" aria-label="下移意图" :disabled="index === (enemy.intents?.length ?? 0) - 1" @click="moveIntent(index, 1)"><ArrowDown :size="12" aria-hidden="true" /></button>
-                  <button type="button" class="icon-button !col-span-2 !h-7 !w-full" title="删除" aria-label="删除意图" @click="removeIntent(index)"><Trash2 :size="12" aria-hidden="true" /></button>
+                  <button type="button" class="btn btn-neutral btn-square btn-sm !h-7 !w-7" title="上移" aria-label="上移意图" :disabled="index === 0" @click="moveIntent(index, -1)"><ArrowUp :size="12" aria-hidden="true" /></button>
+                  <button type="button" class="btn btn-neutral btn-square btn-sm !h-7 !w-7" title="下移" aria-label="下移意图" :disabled="index === (enemy.intents?.length ?? 0) - 1" @click="moveIntent(index, 1)"><ArrowDown :size="12" aria-hidden="true" /></button>
+                  <button type="button" class="btn btn-neutral btn-square btn-sm !col-span-2 !h-7 !w-full" title="删除" aria-label="删除意图" @click="removeIntent(index)"><Trash2 :size="12" aria-hidden="true" /></button>
                 </div>
               </div>
               <div v-if="Object.keys(intent.parameters).length" class="mt-3 grid grid-cols-2 gap-2 border-t border-white/8 pt-3">
                 <label v-for="(_value, key) in intent.parameters" :key="key" class="text-[10px] text-white/34">
                   {{ key }}
-                  <input v-model.number="intent.parameters[key]" type="number" :name="`intent-${intent.instanceId}-${key}`" autocomplete="off" class="field mt-1 w-full px-2 utility-font text-[11px]" />
+                  <input v-model.number="intent.parameters[key]" type="number" :name="`intent-${intent.instanceId}-${key}`" autocomplete="off" class="input input-sm mt-1 w-full px-2 utility-font text-[11px]" />
                 </label>
               </div>
             </li>
           </ol>
 
           <div class="flex gap-2">
-            <button type="button" class="secondary-button flex-1" @click="clearIntents">
+            <button type="button" class="btn btn-neutral btn-sm flex-1" @click="clearIntents">
               <RotateCcw :size="14" aria-hidden="true" />
               清空
             </button>
-            <button type="button" class="primary-button flex-1" @click="applyIntentSequence">应用序列</button>
+            <button type="button" class="btn btn-primary btn-sm flex-1" @click="applyIntentSequence">应用序列</button>
           </div>
           <p v-if="store.lastOperationMessage" class="m-0 text-[10px] leading-5 text-[#d5b75f]" aria-live="polite">{{ store.lastOperationMessage }}</p>
         </div>

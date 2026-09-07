@@ -213,8 +213,8 @@ onUnmounted(() => {
         </div>
         <div class="space-y-3">
           <div class="flex min-w-0 gap-2">
-            <input class="field min-w-0 flex-1 px-3 utility-font text-[11px]" :value="store.unityProjectPath" name="unity-project-path" autocomplete="off" readonly placeholder="未选择 Unity 项目…" aria-label="Unity 项目路径" />
-            <button type="button" class="secondary-button shrink-0" @click="selectUnityProject"><FolderOpen :size="15" aria-hidden="true" />选择项目</button>
+            <input class="input input-sm min-w-0 flex-1 px-3 utility-font text-[11px]" :value="store.unityProjectPath" name="unity-project-path" autocomplete="off" readonly placeholder="未选择 Unity 项目…" aria-label="Unity 项目路径" />
+            <button type="button" class="btn btn-neutral btn-sm shrink-0" @click="selectUnityProject"><FolderOpen :size="15" aria-hidden="true" />选择项目</button>
           </div>
 
           <div v-if="projectInspection" class="flex flex-wrap items-center gap-x-5 gap-y-2 border border-white/10 bg-white/[0.025] px-3 py-2 text-[11px]">
@@ -224,12 +224,12 @@ onUnmounted(() => {
           </div>
 
           <div class="flex gap-2">
-            <button type="button" class="primary-button" :disabled="busy || !projectInspection?.valid" @click="installBridge">
+            <button type="button" class="btn btn-primary btn-sm" :disabled="busy || !projectInspection?.valid" @click="installBridge">
               <RefreshCw v-if="busy" :size="15" class="animate-spin" aria-hidden="true" />
               <PackageCheck v-else :size="15" aria-hidden="true" />
               {{ busy ? '处理中…' : projectInspection?.bridgeInstalled ? '更新 Bridge' : '安装 Bridge' }}
             </button>
-            <button type="button" class="secondary-button" :disabled="busy || !projectInspection?.bridgeInstalled" @click="uninstallBridge"><Trash2 :size="14" aria-hidden="true" />卸载 Bridge</button>
+            <button type="button" class="btn btn-neutral btn-sm" :disabled="busy || !projectInspection?.bridgeInstalled" @click="uninstallBridge"><Trash2 :size="14" aria-hidden="true" />卸载 Bridge</button>
           </div>
         </div>
       </section>
@@ -241,8 +241,8 @@ onUnmounted(() => {
         </div>
         <div class="space-y-3">
           <div class="flex min-w-0 gap-2">
-            <input class="field min-w-0 flex-1 px-3 utility-font text-[11px]" :value="store.gameBuildPath" name="game-build-path" autocomplete="off" readonly placeholder="未选择游戏包…" aria-label="游戏包路径" />
-            <button type="button" class="secondary-button shrink-0" @click="selectBuild"><FolderOpen :size="15" aria-hidden="true" />选择游戏包</button>
+            <input class="input input-sm min-w-0 flex-1 px-3 utility-font text-[11px]" :value="store.gameBuildPath" name="game-build-path" autocomplete="off" readonly placeholder="未选择游戏包…" aria-label="游戏包路径" />
+            <button type="button" class="btn btn-neutral btn-sm shrink-0" @click="selectBuild"><FolderOpen :size="15" aria-hidden="true" />选择游戏包</button>
           </div>
           <div v-if="buildInspection" class="flex flex-wrap items-center gap-x-5 gap-y-2 border border-white/10 bg-white/[0.025] px-3 py-2 text-[11px]">
             <span :class="buildInspection.valid ? 'text-[#67b49e]' : 'text-[#dd6958]'">{{ buildInspection.message }}</span>
@@ -259,7 +259,7 @@ onUnmounted(() => {
             <button
               v-if="!packageBridgeInspection?.prepared"
               type="button"
-              class="primary-button"
+              class="btn btn-primary btn-sm"
               :disabled="packageBridgeBusy || !buildInspection?.valid || buildInspection.backend !== 'mono'"
               @click="installPackageBridge"
             >
@@ -270,7 +270,7 @@ onUnmounted(() => {
             <button
               v-else
               type="button"
-              class="primary-button"
+              class="btn btn-primary btn-sm"
               :disabled="packageBridgeBusy"
               @click="launchPackageBridge"
             >
@@ -279,7 +279,7 @@ onUnmounted(() => {
             <button
               v-if="packageBridgeInspection?.prepared"
               type="button"
-              class="secondary-button"
+              class="btn btn-neutral btn-sm"
               :disabled="packageBridgeBusy"
               @click="removePackageBridge"
             >
@@ -302,7 +302,7 @@ onUnmounted(() => {
                 <p class="m-0 truncate text-[12px] font-semibold text-white/76">{{ instance.displayName }}</p>
                 <p class="utility-font m-0 mt-1 truncate text-[9px] text-white/28">PID {{ instance.processId }} · {{ instance.gameVersion }} · {{ instance.sceneName }}</p>
               </div>
-              <button type="button" class="secondary-button shrink-0" :disabled="Boolean(connectingInstanceId) || store.connectedInstanceId === instance.instanceId" @click="connect(instance)">
+              <button type="button" class="btn btn-neutral btn-sm shrink-0" :disabled="Boolean(connectingInstanceId) || store.connectedInstanceId === instance.instanceId" @click="connect(instance)">
                 <RefreshCw v-if="connectingInstanceId === instance.instanceId" :size="14" class="animate-spin" aria-hidden="true" />
                 <Cable v-else :size="14" aria-hidden="true" />
                 {{ store.connectedInstanceId === instance.instanceId ? '已连接' : connectingInstanceId === instance.instanceId ? '连接中…' : '连接' }}
@@ -332,7 +332,7 @@ onUnmounted(() => {
           </div>
 
           <div v-if="store.updateStatus.phase === 'downloading'" class="space-y-1.5">
-            <progress class="block h-1.5 w-full accent-[#c6a451]" :value="store.updateStatus.percent ?? 0" max="100" aria-label="更新下载进度" />
+            <progress class="progress progress-secondary block h-1.5 w-full" :value="store.updateStatus.percent ?? 0" max="100" aria-label="更新下载进度" />
             <p class="utility-font m-0 text-[10px] tabular-nums text-white/55">
               {{ Math.floor(store.updateStatus.percent ?? 0) }}%
               <template v-if="store.updateStatus.total"> · {{ ((store.updateStatus.transferred ?? 0) / 1048576).toFixed(1) }} / {{ (store.updateStatus.total / 1048576).toFixed(1) }} MB</template>
@@ -342,7 +342,7 @@ onUnmounted(() => {
           <button
             v-if="store.updateStatus.phase === 'available'"
             type="button"
-            class="primary-button"
+            class="btn btn-primary btn-sm"
             @click="store.downloadUpdate"
           >
             <Download :size="15" aria-hidden="true" />下载更新
@@ -350,7 +350,7 @@ onUnmounted(() => {
           <button
             v-else-if="store.updateStatus.phase === 'downloaded'"
             type="button"
-            class="primary-button"
+            class="btn btn-primary btn-sm"
             @click="store.restartForUpdate"
           >
             <RefreshCw :size="15" aria-hidden="true" />重启并更新
@@ -358,7 +358,7 @@ onUnmounted(() => {
           <button
             v-else
             type="button"
-            class="secondary-button"
+            class="btn btn-neutral btn-sm"
             :disabled="['disabled', 'checking', 'downloading', 'applying'].includes(store.updateStatus.phase)"
             @click="store.checkForUpdates"
           >
@@ -372,10 +372,3 @@ onUnmounted(() => {
     </div>
   </section>
 </template>
-
-<style scoped>
-progress { appearance: none; border: 0; background: rgb(255 255 255 / 10%); }
-progress::-webkit-progress-bar { background: rgb(255 255 255 / 10%); }
-progress::-webkit-progress-value { background: #c6a451; }
-progress::-moz-progress-bar { background: #c6a451; }
-</style>

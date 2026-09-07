@@ -1,4 +1,41 @@
 @import "tailwindcss";
+@plugin "daisyui" {
+  themes: false;
+  logs: false;
+}
+@plugin "daisyui/theme" {
+  name: "ashes";
+  default: true;
+  color-scheme: dark;
+  --color-base-100: #121112;
+  --color-base-200: #19181b;
+  --color-base-300: #252327;
+  --color-base-content: #e8e2d7;
+  --color-primary: #c44536;
+  --color-primary-content: #ffffff;
+  --color-secondary: #c6a451;
+  --color-secondary-content: #171619;
+  --color-accent: #7167a8;
+  --color-accent-content: #ffffff;
+  --color-neutral: #252327;
+  --color-neutral-content: #e8e2d7;
+  --color-info: #72a9cb;
+  --color-info-content: #10171b;
+  --color-success: #67b49e;
+  --color-success-content: #10241c;
+  --color-warning: #d5b75f;
+  --color-warning-content: #211e10;
+  --color-error: #dd6958;
+  --color-error-content: #220d08;
+  --radius-selector: 0.25rem;
+  --radius-field: 0.25rem;
+  --radius-box: 0.375rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 0;
+  --noise: 0;
+}
 
 @font-face {
   font-family: "Ashes Display";
@@ -134,93 +171,10 @@ h2 {
   background: linear-gradient(90deg, transparent, rgb(198 164 81 / 0.65), transparent);
 }
 
-.field {
-  min-height: 36px;
-  border: 1px solid rgb(232 226 215 / 0.15);
-  border-radius: 4px;
-  color: #e8e2d7;
-  background: #161519;
-}
-
-.field:disabled {
-  color: rgb(232 226 215 / 0.38);
-  cursor: not-allowed;
-}
-
-.icon-button {
-  display: inline-grid;
-  width: 36px;
-  height: 36px;
-  place-items: center;
-  border: 1px solid rgb(232 226 215 / 0.14);
-  border-radius: 4px;
-  color: rgb(232 226 215 / 0.72);
-  background: #1c1a1e;
-  transition: color 150ms ease, border-color 150ms ease, background 150ms ease;
-}
-
-.icon-button:hover:not(:disabled) {
-  border-color: rgb(198 164 81 / 0.55);
-  color: #f2d77f;
-  background: #29252a;
-}
-
-.icon-button:disabled {
-  cursor: not-allowed;
-  opacity: 0.35;
-}
-
-.primary-button {
-  display: inline-flex;
-  min-height: 36px;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  border: 1px solid #df6957;
-  border-radius: 4px;
-  padding: 0 14px;
-  color: #fff4e8;
-  background: #a9382e;
-  font-weight: 700;
-  transition: transform 120ms ease, background 120ms ease;
-}
-
-.primary-button:hover:not(:disabled) {
-  background: #c44536;
-}
-
-.primary-button:active:not(:disabled) {
-  transform: translateY(1px);
-}
-
-.primary-button:disabled {
-  cursor: not-allowed;
-  opacity: 0.38;
-}
-
-.secondary-button {
-  display: inline-flex;
-  min-height: 36px;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  border: 1px solid rgb(232 226 215 / 0.17);
-  border-radius: 4px;
-  padding: 0 12px;
-  color: rgb(232 226 215 / 0.82);
-  background: #232126;
-  font-weight: 650;
-}
-
-.secondary-button:hover:not(:disabled) {
-  border-color: rgb(198 164 81 / 0.55);
-  color: #f2d77f;
-}
-
-.secondary-button:disabled {
-  cursor: not-allowed;
-  opacity: 0.38;
-}
+.btn-sm, .input-sm, .select-sm { --size: 36px; }
+.btn { letter-spacing: 0; }
+.input, .select { min-width: 0; }
+.input:focus, .select:focus { outline-color: var(--color-secondary); }
 
 .status-dot {
   width: 8px;

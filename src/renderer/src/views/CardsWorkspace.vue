@@ -64,10 +64,10 @@ const rarities: Array<{ value: Rarity; label: string }> = [
         <label class="relative w-full max-w-[340px]">
           <span class="sr-only">搜索卡牌</span>
           <Search class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-white/30" :size="15" aria-hidden="true" />
-          <input v-model="store.cardSearch" class="field w-full pl-9 pr-3 text-[13px]" type="search" name="card-search" placeholder="名称、TypeId、标签…" autocomplete="off" />
+          <input v-model="store.cardSearch" class="input input-sm w-full pl-9 pr-3 text-[13px]" type="search" name="card-search" placeholder="名称、TypeId、标签…" autocomplete="off" />
         </label>
 
-        <select v-model="store.sortKey" name="card-sort" class="field px-3 text-[12px]" aria-label="排序字段">
+        <select v-model="store.sortKey" name="card-sort" class="select select-sm px-3 text-[12px]" aria-label="排序字段">
           <option value="typeId">按 TypeId</option>
           <option value="category">按类型</option>
           <option value="cost">按费用</option>
@@ -75,7 +75,7 @@ const rarities: Array<{ value: Rarity; label: string }> = [
         </select>
         <button
           type="button"
-          class="icon-button"
+          class="btn btn-neutral btn-square btn-sm"
           :title="store.sortDirection === 'asc' ? '切换为降序' : '切换为升序'"
           :aria-label="store.sortDirection === 'asc' ? '切换为降序' : '切换为升序'"
           @click="store.sortDirection = store.sortDirection === 'asc' ? 'desc' : 'asc'"
@@ -90,7 +90,7 @@ const rarities: Array<{ value: Rarity; label: string }> = [
       <fieldset class="flex flex-wrap items-center gap-2">
         <legend class="float-left mr-2 text-[11px] font-bold text-white/42">类型</legend>
         <label v-for="item in categories" :key="item.value" class="flex h-7 cursor-pointer items-center gap-1.5 border border-white/10 px-2 text-[11px] text-white/58 has-[:checked]:border-[#c6a451]/48 has-[:checked]:bg-[#c6a451]/9 has-[:checked]:text-[#edcf70]">
-          <input v-model="store.selectedCategories" class="accent-[#c44536]" type="checkbox" name="card-category" :value="item.value" />
+          <input v-model="store.selectedCategories" class="checkbox checkbox-xs checkbox-primary" type="checkbox" name="card-category" :value="item.value" />
           {{ item.label }}
         </label>
       </fieldset>
@@ -106,7 +106,7 @@ const rarities: Array<{ value: Rarity; label: string }> = [
       <fieldset class="flex flex-wrap items-center gap-2">
         <legend class="float-left mr-2 text-[11px] font-bold text-white/42">稀有度</legend>
         <label v-for="item in rarities" :key="item.value" class="flex h-7 cursor-pointer items-center gap-1.5 border border-white/10 px-2 text-[11px] text-white/58 has-[:checked]:border-[#7167a8]/70 has-[:checked]:bg-[#7167a8]/14 has-[:checked]:text-[#c8c1ee]">
-          <input v-model="store.selectedRarities" class="accent-[#7167a8]" type="checkbox" name="card-rarity" :value="item.value" />
+          <input v-model="store.selectedRarities" class="checkbox checkbox-xs checkbox-accent" type="checkbox" name="card-rarity" :value="item.value" />
           {{ item.label }}
         </label>
       </fieldset>
@@ -143,7 +143,7 @@ const rarities: Array<{ value: Rarity; label: string }> = [
         <div>
           <p class="m-0 text-sm text-white/58">尚未同步卡牌目录</p>
           <p class="m-0 mt-2 text-[11px] text-white/30">连接 Unity Editor 后读取当前项目的真实目录。</p>
-          <button type="button" class="primary-button mt-4" @click="store.activeWorkspace = 'setup'">前往连接</button>
+          <button type="button" class="btn btn-primary btn-sm mt-4" @click="store.activeWorkspace = 'setup'">前往连接</button>
         </div>
       </div>
       <div v-else class="grid h-56 place-items-center border border-dashed border-white/12 text-center">

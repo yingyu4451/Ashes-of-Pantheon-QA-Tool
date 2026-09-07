@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { Box, Cable, Crosshair, PackageOpen, RefreshCw, Shield, Skull, UserRound } from '@lucide/vue'
 import EntityInspector from '@/components/EntityInspector.vue'
+import EquipmentPicker from '@/components/EquipmentPicker.vue'
 import { useQaStore } from '@/stores/qa'
 import type { GridPoint, QaEntity } from '@shared/contracts'
 
@@ -99,13 +100,13 @@ async function placeEquipment(): Promise<void> {
       <Cable :size="28" class="mx-auto text-[#c6a451]/65" aria-hidden="true" />
       <h1 id="battle-empty-title" class="display-font m-0 mt-4 text-[24px] text-[#eee7dc]">未连接战斗实例</h1>
       <p class="m-0 mt-2 text-[12px] text-white/38">连接 Unity Editor Play Mode 后载入战斗状态。</p>
-      <button type="button" class="primary-button mt-5" @click="store.activeWorkspace = 'setup'">前往连接</button>
+      <button type="button" class="btn btn-primary btn-sm mt-5" @click="store.activeWorkspace = 'setup'">前往连接</button>
     </div>
   </section>
 
   <section v-else class="battle-workspace" aria-labelledby="battle-title">
     <h1 id="battle-title" class="sr-only">战斗工作台</h1>
-    <aside class="flex min-h-0 min-w-0 flex-col border-r border-white/10 bg-[#171619]">
+    <aside class="flex min-h-0 min-w-0 flex-col border-r border-white/10 bg-[#171619]" aria-label="场上对象">
       <div class="shrink-0 border-b border-white/9 px-4 py-5">
         <p class="display-font m-0 text-[23px] text-[#eee7dc]" aria-hidden="true">战斗工作台</p>
       </div>
@@ -115,8 +116,9 @@ async function placeEquipment(): Promise<void> {
           v-for="entity in allEntities"
           :key="entity.instanceId"
           type="button"
-          class="mb-1 flex h-[54px] w-full items-center gap-3 border border-transparent px-2 text-left hover:bg-white/4"
+          class="mb-1 flex min-h-[64px] w-full items-center gap-2 border border-transparent px-2 py-2 text-left hover:bg-white/4"
           :class="store.selectedEntityId === entity.instanceId ? 'border-[#c6a451]/28 bg-[#c6a451]/8' : ''"
+          :aria-label="`${entity.name} ${entity.typeId}，位置 ${entity.position.x}, ${entity.position.y}`"
           @click="selectEntity(entity)"
         >
           <span
@@ -129,6 +131,7 @@ async function placeEquipment(): Promise<void> {
           </span>
           <span class="min-w-0 flex-1">
             <span class="block truncate text-[12px] font-semibold text-white/72">{{ entity.name }}</span>
+            <span v-if="entity.kind === 'equipment'" class="utility-font mt-0.5 block truncate text-[9px] text-white/45" :title="entity.typeId" translate="no">{{ entity.typeId }}</span>
             <span class="mt-0.5 block utility-font text-[9px] text-white/28">{{ entity.position.x }}, {{ entity.position.y }}</span>
           </span>
           <span v-if="entity.currentHp !== undefined" class="utility-font text-[10px] text-white/40">{{ entity.currentHp }}/{{ entity.maxHp }}</span>
@@ -136,18 +139,13 @@ async function placeEquipment(): Promise<void> {
       </div>
 
       <div class="shrink-0 border-t border-white/9 p-3">
-        <label class="block text-[10px] text-white/38">
-          放置装备
-          <select v-model="store.selectedEquipmentTypeId" name="placement-equipment" aria-label="放置装备" class="field mt-1 w-full min-w-0 px-2 text-[11px]" :disabled="placementBusy || !store.catalog.equipment.length">
-            <option v-if="!store.catalog.equipment.length" value="">没有可用装备</option>
-            <option v-for="item in store.catalog.equipment" :key="item.typeId" :value="item.typeId">{{ item.name }} · {{ item.typeId }}</option>
-          </select>
-        </label>
+        <p class="m-0 mb-1 text-[10px] text-white/45">放置装备</p>
+        <EquipmentPicker v-model="store.selectedEquipmentTypeId" :options="store.catalog.equipment" :disabled="placementBusy" />
         <div v-if="selectedEquipment" class="mt-2 min-w-0 text-[11px] text-white/65">
           <span class="block break-words">{{ selectedEquipment.name }}</span>
           <span class="utility-font mt-0.5 block break-all text-[10px] text-white/45" translate="no">{{ selectedEquipment.typeId }}</span>
         </div>
-        <button type="button" class="primary-button mt-2 w-full" :disabled="placementBusy || !store.selectedCell || !selectedEquipment" @click="placeEquipment">
+        <button type="button" class="btn btn-primary btn-sm mt-2 w-full" :disabled="placementBusy || !store.selectedCell || !selectedEquipment" @click="placeEquipment">
           <RefreshCw v-if="placementBusy" :size="14" class="shrink-0 animate-spin" aria-hidden="true" />
           <Box v-else :size="14" class="shrink-0" aria-hidden="true" />
           {{ placementBusy ? '放置中…' : `放置到 ${store.selectedCell ? `${store.selectedCell.x}, ${store.selectedCell.y}` : '未选格'}` }}
@@ -156,9 +154,12 @@ async function placeEquipment(): Promise<void> {
       </div>
     </aside>
 
-    <main class="relative flex min-h-0 min-w-0 flex-col overflow-hidden bg-[#131215]">
-      <div class="flex h-12 shrink-0 items-center justify-between border-b border-white/8 px-4 text-[10px] text-white/36">
-        <span class="utility-font">{{ store.battle.mapName }} · {{ store.battle.width }}×{{ store.battle.height }}</span>
+    <section class="relative flex min-h-0 min-w-0 flex-col overflow-hidden bg-[#131215]" aria-labelledby="battle-map-title">
+      <div class="flex min-h-16 shrink-0 flex-wrap items-center justify-between gap-2 border-b border-white/8 px-4 py-2 text-[10px] text-white/50">
+        <div class="min-w-0">
+          <h2 id="battle-map-title" class="m-0 text-[14px] font-bold text-white/80">战斗地图</h2>
+          <p class="utility-font m-0 mt-1 truncate">{{ store.battle.mapName }} · {{ store.battle.width }}×{{ store.battle.height }}</p>
+        </div>
         <span class="flex items-center gap-2"><Crosshair :size="13" aria-hidden="true" /> 选中格 {{ store.selectedCell ? `${store.selectedCell.x}, ${store.selectedCell.y}` : '—' }}</span>
       </div>
 
@@ -210,7 +211,7 @@ async function placeEquipment(): Promise<void> {
           </div>
         </div>
       </div>
-    </main>
+    </section>
 
     <EntityInspector />
   </section>

@@ -1,11 +1,11 @@
 # Ashes of Pantheon QA Tool
 
-面向《Ashes of Pantheon》的桌面 QA 工作台。前端使用 Electron、Vue 3、Tailwind CSS 4 与 GSAP。
+面向《Ashes of Pantheon》的桌面 QA 工作台。前端使用 Electron、Vue 3、daisyUI 5、Tailwind CSS 4 与 GSAP。
 
 ## 当前能力
 
 - 卡牌目录：图片列表、名称、TypeId、描述、1 秒 hover 提示、多选筛选与排序、离线缓存。
-- 战斗工作台：动态格网、玩家/怪物/装备位置、对象检查器、装备按格放置。
+- 战斗工作台：战斗地图、玩家/怪物/场上装备位置、对象检查器；装备下拉框支持中文名与 TypeId 搜索，放置成功后刷新列表和地图。
 - 主角检查器：在战斗中选择主角，通过“属性 / 祝福 / BUFF”选项卡编辑状态；不再设置独立玩家选项卡。桌面窗口最小为 1100 × 720，不提供手机端。
 - BUFF：对玩家或怪物添加和移除 BUFF。
 - 怪物：生命、攻击力、已注册意图序列、循环起点与参数编辑。
@@ -38,6 +38,15 @@ pnpm run build
 ```
 
 项目内置的 Unity Package 位于 `resources/unity-package/com.ashes-of-pantheon.qa-bridge`。不要手工提交到游戏项目；通过工具的“项目与连接”页面安装或卸载。
+
+更新工具后，Editor 用户需要在连接页点击“更新 Bridge”并等待 Unity 编译；游戏包用户需先关闭临时游戏副本，重新安装打包版 Bridge，再从临时副本启动。原始游戏源文件不修改。名称优先读取游戏的 `zh-Hans` 本地化数据；本机项目中模板引用和对应中文表项均缺失的旧条目不能凭空恢复，例如 `TravelersBackpack`，需要核对实际游戏版本或补齐上游数据。
+
+QA 自有 Bridge 的独立回归夹具和插件编译（不加载、构建或改写 Unity 项目）：
+
+```powershell
+./scripts/test-bridge.ps1 -UnityEditorPath 'D:\Unity Editor\2022.3.62f2c1\Editor'
+./scripts/build-package-bridge.ps1 -UnityEditorPath 'D:\Unity Editor\2022.3.62f2c1\Editor'
+```
 
 ## 发布更新
 

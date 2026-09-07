@@ -169,7 +169,7 @@ namespace AshesOfPantheon.QA.EditorBridge
                 turn = 0,
                 phase = "runtime",
                 player,
-                entities = enemyDtos
+                entities = enemyDtos.Concat(GetEquipmentEntities()).ToList()
             };
         }
 
@@ -374,6 +374,35 @@ namespace AshesOfPantheon.QA.EditorBridge
             }
 
             return entries.OrderBy(entry => entry.typeId, StringComparer.Ordinal);
+        }
+
+
+        private IEnumerable<object> GetEquipmentEntities()
+        {
+            var controller = GetSingleton("HappyHotel.Prop.PropController");
+            var equipmentType = FindType("HappyHotel.Prop.EquipmentPropBase");
+            var method = controller?.GetType().GetMethods(BindingFlags.Public | BindingFlags.Instance)
+                .FirstOrDefault(candidate => candidate.Name == "GetAllPropsOfType" && candidate.IsGenericMethodDefinition &&
+                    candidate.GetGenericArguments().Length == 1 && candidate.GetParameters().Length == 0);
+            if (method == null || equipmentType == null) yield break;
+            var deployment = GetSingleton("HappyHotel.Inventory.EquipmentCardDeploymentService");
+            var visualType = FindType("HappyHotel.Prop.PropVisualController");
+            foreach (var prop in Enumerate(method.MakeGenericMethod(equipmentType).Invoke(controller, null)).Distinct())
+            {
+                if (prop == null || prop is UnityEngine.Object unityObject && unityObject == null) continue;
+                var visual = visualType == null ? null : Invoke(prop, "GetComponent", visualType);
+                if (ReadMember<bool>(visual, "IsDisappearPlaying")) continue;
+                var card = Invoke(prop, "GetSourceEquipment");
+                if (card != null && deployment != null && Invoke(deployment, "IsBound", card) is bool bound && !bound) continue;
+                var typeId = ResolveTypeId(card ?? prop);
+                var definition = ResolveRegistryEntry("HappyHotel.Card.CardRegistry", typeId, "itemNameLocalized");
+                var point = GetGridPosition(prop);
+                var id = prop is UnityEngine.Object obj ? obj.GetInstanceID().ToString() : System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(prop).ToString();
+                yield return new {
+                    instanceId = $"equipment#{id}", typeId, definition.name, kind = "equipment",
+                    position = new { x = point.x, y = point.y }, buffs = Array.Empty<object>()
+                };
+            }
         }
 
         private object BuildPlayer(object player)

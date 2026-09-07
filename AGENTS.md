@@ -27,6 +27,8 @@
 
 ## 前端附加规则
 
+- UI 控件使用 daisyUI 5 与 Tailwind CSS 4，保留 Vue 3 和现有桌面暗色主题；卡牌和战斗地图保留领域专用样式。
+
 - 修改用户可见的 Vue、React、HTML、CSS、布局、动画、文案、交互状态或前端资源时，额外加载并执行 `frontend-design` 与 `web-design-guidelines`。
 - 使用 `frontend-design` 在实现前确立针对当前项目的视觉方向，并在实现后进行自我审查。
 - 每次前端审查前，获取 `web-design-guidelines` 要求的最新 Web Interface Guidelines。

@@ -20,7 +20,7 @@ using UnityEngine.SceneManagement;
 
 namespace AshesOfPantheon.QA.PackageBridge
 {
-    [BepInPlugin("com.ashes-of-pantheon.qa.package-bridge", "Ashes of Pantheon QA Package Bridge", "0.3.0")]
+    [BepInPlugin("com.ashes-of-pantheon.qa.package-bridge", "Ashes of Pantheon QA Package Bridge", "0.3.1")]
     public sealed class PackageBridgePlugin : BaseUnityPlugin
     {
         private static QaBridgeServer s_server;
@@ -622,7 +622,7 @@ namespace AshesOfPantheon.QA.PackageBridge
                 turn = 0,
                 phase = "runtime",
                 player = BuildPlayer(characters.FirstOrDefault(IsMainCharacter)),
-                entities = enemies.Select((enemy, index) => BuildEntity(enemy, index)).Where(value => value != null).ToList()
+                entities = enemies.Select((enemy, index) => BuildEntity(enemy, index)).Where(value => value != null).Concat(GetEquipmentEntities()).ToList()
             };
         }
 
@@ -684,6 +684,35 @@ namespace AshesOfPantheon.QA.PackageBridge
             return entries.OrderBy(entry => entry.typeId, StringComparer.Ordinal);
         }
 
+
+        private IEnumerable<object> GetEquipmentEntities()
+        {
+            var controller = GetSingleton("HappyHotel.Prop.PropController");
+            var equipmentType = FindType("HappyHotel.Prop.EquipmentPropBase");
+            var method = controller?.GetType().GetMethods(BindingFlags.Public | BindingFlags.Instance)
+                .FirstOrDefault(candidate => candidate.Name == "GetAllPropsOfType" && candidate.IsGenericMethodDefinition &&
+                    candidate.GetGenericArguments().Length == 1 && candidate.GetParameters().Length == 0);
+            if (method == null || equipmentType == null) yield break;
+            var deployment = GetSingleton("HappyHotel.Inventory.EquipmentCardDeploymentService");
+            var visualType = FindType("HappyHotel.Prop.PropVisualController");
+            foreach (var prop in Enumerate(method.MakeGenericMethod(equipmentType).Invoke(controller, null)).Distinct())
+            {
+                if (prop == null || prop is UnityEngine.Object unityObject && unityObject == null) continue;
+                var visual = visualType == null ? null : Invoke(prop, "GetComponent", visualType);
+                if (ReadMember<bool>(visual, "IsDisappearPlaying")) continue;
+                var card = Invoke(prop, "GetSourceEquipment");
+                if (card != null && deployment != null && Invoke(deployment, "IsBound", card) is bool bound && !bound) continue;
+                var typeId = ResolveTypeId(card ?? prop);
+                var definition = ResolveRegistryEntry("HappyHotel.Card.CardRegistry", typeId, "itemNameLocalized");
+                var point = GetGridPosition(prop);
+                var id = prop is UnityEngine.Object obj ? obj.GetInstanceID().ToString() : System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(prop).ToString();
+                yield return new {
+                    instanceId = $"equipment#{id}", typeId, definition.name, kind = "equipment",
+                    position = new { x = point.x, y = point.y }, buffs = Array.Empty<object>()
+                };
+            }
+        }
+
         private object BuildPlayer(object player)
         {
             if (player == null) return null;
@@ -730,7 +759,7 @@ namespace AshesOfPantheon.QA.PackageBridge
         {
             if (template == null) return string.Empty;
             var localizedString = ReadMember<object>(template, member);
-            var value = ResolveLocalized(localizedString);
+            var value = ResolveLocalizedTableEntry(ReadMember<object>(localizedString, "TableReference"), ReadMember<object>(localizedString, "TableEntryReference"));
             if (!IsMissingTranslation(value)) return value;
 
             var prefixCandidates = new List<string>();
@@ -855,6 +884,12 @@ namespace AshesOfPantheon.QA.PackageBridge
 
         private static string ResolveLocalizedTableEntry(string tableName, string key)
         {
+            return ResolveLocalizedTableEntry((object)tableName, key);
+        }
+
+        private static string ResolveLocalizedTableEntry(object tableReference, object entryReference)
+        {
+            if (tableReference == null || entryReference == null) return string.Empty;
             try
             {
                 var settingsType = FindAnyType("UnityEngine.Localization.Settings.LocalizationSettings");
@@ -864,6 +899,7 @@ namespace AshesOfPantheon.QA.PackageBridge
                 var getLocale = availableLocales.GetType().GetMethods(BindingFlags.Public | BindingFlags.Instance)
                     .FirstOrDefault(candidate => candidate.Name == "GetLocale" && candidate.GetParameters().Length == 1 && candidate.GetParameters()[0].ParameterType == typeof(string));
                 var locale = getLocale?.Invoke(availableLocales, new object[] { "zh-Hans" });
+                if (locale == null) return string.Empty;
                 var method = database.GetType().GetMethods(BindingFlags.Public | BindingFlags.Instance)
                     .Where(candidate => candidate.Name == "GetLocalizedString")
                     .FirstOrDefault(candidate =>
@@ -876,8 +912,8 @@ namespace AshesOfPantheon.QA.PackageBridge
                 if (method == null) return string.Empty;
                 var parameters = method.GetParameters();
                 var arguments = new object[parameters.Length];
-                arguments[0] = CreateStringReference(parameters[0].ParameterType, tableName, "TableCollectionName", "ReferenceType", 2);
-                arguments[1] = CreateStringReference(parameters[1].ParameterType, key, "Key", "ReferenceType", 1);
+                arguments[0] = tableReference is string tableName ? CreateStringReference(parameters[0].ParameterType, tableName, "TableCollectionName", "ReferenceType", 2) : tableReference;
+                arguments[1] = entryReference is string key ? CreateStringReference(parameters[1].ParameterType, key, "Key", "ReferenceType", 1) : entryReference;
                 for (var index = 2; index < parameters.Length; index++)
                 {
                     var parameter = parameters[index];

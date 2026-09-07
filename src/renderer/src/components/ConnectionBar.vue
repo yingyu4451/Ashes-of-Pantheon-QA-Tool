@@ -30,10 +30,10 @@ const emit = defineEmits<{ openSetup: []; refresh: [] }>()
         <span>回合 <b class="ml-1 text-white/78">{{ turn }}</b></span>
         <span>阶段 <b class="ml-1 text-white/78">{{ phase }}</b></span>
       </div>
-      <button type="button" class="icon-button" title="刷新运行时状态" aria-label="刷新运行时状态" :disabled="status !== 'connected'" @click="emit('refresh')">
+      <button type="button" class="btn btn-neutral btn-square btn-sm" title="刷新运行时状态" aria-label="刷新运行时状态" :disabled="status !== 'connected'" @click="emit('refresh')">
         <RefreshCw :size="16" aria-hidden="true" />
       </button>
-      <button type="button" class="secondary-button" @click="emit('openSetup')">
+      <button type="button" class="btn btn-neutral btn-sm" @click="emit('openSetup')">
         <Cable :size="15" aria-hidden="true" />
         <span class="max-[520px]:sr-only">连接</span>
       </button>
