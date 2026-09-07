@@ -1,6 +1,6 @@
 {
   "name": "ashes-of-pantheon-qa-tool",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "packageManager": "pnpm@11.25.0",
   "private": true,
   "description": "Ashes of Pantheon runtime QA workstation",
@@ -60,6 +60,10 @@
     ],
     "extraResources": [
       {
+        "from": "resources/branding/icon.png",
+        "to": "branding/icon.png"
+      },
+      {
         "from": "resources/updater",
         "to": "updater"
       },
@@ -83,7 +87,8 @@
       }
     ],
     "win": {
-      "target": "zip"
+      "target": "zip",
+      "icon": "resources/branding/icon.ico"
     },
     "publish": [
       {

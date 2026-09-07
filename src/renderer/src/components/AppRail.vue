@@ -5,6 +5,7 @@ import type { WorkspaceId } from '@shared/contracts'
 
 defineProps<{ active: WorkspaceId }>()
 const emit = defineEmits<{ select: [workspace: WorkspaceId] }>()
+const logoUrl = `${import.meta.env.BASE_URL}assets/qa-logo.png`
 
 const items: Array<{ id: WorkspaceId; label: string; icon: Component }> = [
   { id: 'battle', label: '战斗', icon: Boxes },
@@ -16,9 +17,7 @@ const items: Array<{ id: WorkspaceId; label: string; icon: Component }> = [
 <template>
   <nav class="flex h-full w-[86px] shrink-0 flex-col border-r border-white/10 bg-[#171619] max-[640px]:fixed max-[640px]:inset-x-0 max-[640px]:bottom-0 max-[640px]:z-[60] max-[640px]:h-[64px] max-[640px]:w-full max-[640px]:flex-row max-[640px]:border-r-0 max-[640px]:border-t" aria-label="主导航">
     <div class="flex h-[78px] items-center justify-center border-b border-white/8 max-[640px]:hidden">
-      <div class="grid h-10 w-10 place-items-center border border-[#c6a451]/50 bg-[#211d20] text-[#e5c566] cut-corner" aria-label="Ashes of Pantheon QA Tool">
-        <span class="display-font text-[22px]">A</span>
-      </div>
+      <img :src="logoUrl" alt="Ashes of Pantheon QA Tool" width="48" height="48" class="h-12 w-12 shrink-0 object-contain" draggable="false" fetchpriority="high" />
     </div>
 
     <div class="flex flex-1 flex-col gap-1 p-2 pt-4 max-[640px]:flex-row max-[640px]:gap-0 max-[640px]:p-0">
@@ -37,6 +36,6 @@ const items: Array<{ id: WorkspaceId; label: string; icon: Component }> = [
       </button>
     </div>
 
-    <div class="border-t border-white/8 px-2 py-3 text-center utility-font text-[9px] text-white/25 max-[640px]:hidden">QA 0.1.10</div>
+    <div class="border-t border-white/8 px-2 py-3 text-center utility-font text-[9px] text-white/25 max-[640px]:hidden">QA 0.1.11</div>
   </nav>
 </template>

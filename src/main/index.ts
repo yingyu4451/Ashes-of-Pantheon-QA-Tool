@@ -13,6 +13,9 @@ function createWindow(): void {
     autoHideMenuBar: true,
     backgroundColor: '#121112',
     title: 'Ashes of Pantheon QA Tool',
+    icon: app.isPackaged
+      ? join(process.resourcesPath, 'branding', 'icon.png')
+      : join(app.getAppPath(), 'resources', 'branding', 'icon.png'),
     webPreferences: {
       preload: join(__dirname, '../preload/index.cjs'),
       contextIsolation: true,

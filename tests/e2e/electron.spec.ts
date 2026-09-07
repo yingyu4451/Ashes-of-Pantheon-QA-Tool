@@ -15,6 +15,9 @@ test('native preload exposes directory selection and hides demo catalog', async 
   try {
     const page = await app.firstWindow()
     await page.waitForLoadState('domcontentloaded')
+    const logo = page.getByRole('navigation', { name: '主导航' }).getByRole('img', { name: 'Ashes of Pantheon QA Tool' })
+    await expect(logo).toBeVisible()
+    await expect.poll(() => logo.evaluate((element: HTMLImageElement) => element.complete && element.naturalWidth > 0)).toBe(true)
 
     const nativeApi = await page.evaluate(() => ({
       selectDirectory: typeof window.qaNative?.selectDirectory,
