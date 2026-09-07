@@ -33,7 +33,7 @@ export const useQaStore = defineStore('qa', () => {
   const gameBuildPath = ref('')
   const updateStatus = ref<UpdateStatus>({
     phase: nativeMode ? 'idle' : 'disabled',
-    currentVersion: '0.1.7',
+    currentVersion: '0.1.8',
     message: nativeMode ? '尚未检查更新。' : '开发模式不检查更新。'
   })
   const runtimeReady = ref(!nativeMode)
@@ -42,6 +42,7 @@ export const useQaStore = defineStore('qa', () => {
   const ownedCardCounts = ref<Record<string, number>>({})
   const battle = ref<QaBattleSnapshot>(clone(demoBattle))
   const selectedEntityId = ref<string>('enemy-01#0')
+  const movingTargetId = ref('')
   const selectedCell = ref<GridPoint | null>({ x: 1, y: -2 })
   const selectedEquipmentTypeId = ref('')
   const selectedBuffTypeId = ref('')
@@ -64,6 +65,8 @@ export const useQaStore = defineStore('qa', () => {
     if (selectedEntityId.value === battle.value.player.instanceId) {
       return {
         instanceId: battle.value.player.instanceId,
+        moveTargetId: battle.value.player.moveTargetId,
+        size: battle.value.player.size,
         typeId: 'MainCharacter',
         name: battle.value.player.name,
         kind: 'player',
@@ -288,6 +291,7 @@ export const useQaStore = defineStore('qa', () => {
   }
 
   function refreshRuntime(announce = true): Promise<OperationResult> {
+    if (movingTargetId.value) return Promise.resolve({ ok: false, message: '对象正在移动。' })
     if (announce) refreshAnnouncementRequested = true
     if (refreshInFlight) return refreshInFlight
     refreshInFlight = performRuntimeRefresh().finally(() => {
@@ -372,6 +376,40 @@ export const useQaStore = defineStore('qa', () => {
     showNotice(operation.message, operation.ok ? 'success' : 'error')
     if (operation.ok) await refreshRuntime()
     return operation
+  }
+
+  async function moveEntity(entity: QaEntity, destination: GridPoint): Promise<OperationResult> {
+    const instanceId = connectedInstanceId.value
+    if (movingTargetId.value || !runtimeReady.value || connectionStatus.value !== 'connected' || !window.qaNative || !instanceId || !entity.moveTargetId || !battle.value.movement?.allowed) {
+      return { ok: false, message: battle.value.movement?.reason || '当前不能移动对象，请连接并更新 Bridge。' }
+    }
+    movingTargetId.value = entity.moveTargetId
+    try {
+      if (refreshInFlight) await refreshInFlight
+      if (connectedInstanceId.value !== instanceId) return { ok: false, message: '运行实例已切换。' }
+      const result = await window.qaNative.requestBridge<{ success: boolean; message: string }>({
+        instanceId, method: 'POST', path: '/api/entities/move',
+        body: { moveTargetId: entity.moveTargetId, from: { ...entity.position }, to: { ...destination } }
+      })
+      const snapshot = await window.qaNative.requestBridge<QaBattleSnapshot>({ instanceId, method: 'GET', path: '/api/battle' })
+      if (connectedInstanceId.value !== instanceId) return { ok: false, message: '运行实例已切换。' }
+      if (snapshot.ok && snapshot.data) {
+        runtimeReady.value = snapshot.data.available !== false
+        if (runtimeReady.value) {
+          battle.value = snapshot.data
+          const updated = [snapshot.data.player, ...snapshot.data.entities].find((item) => item?.moveTargetId === entity.moveTargetId)
+          if (updated) { selectedEntityId.value = updated.instanceId; selectedCell.value = updated.position }
+        }
+      } else runtimeReady.value = false
+      const operation = { ok: Boolean(result.ok && result.data?.success && snapshot.ok), message: result.data?.message || result.message }
+      if (!snapshot.ok) operation.message += ' 战斗状态刷新失败，请手动刷新确认实际位置。'
+      showNotice(operation.message, operation.ok ? 'success' : 'error')
+      return operation
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '移动请求失败，请刷新实际位置。'
+      showNotice(message, 'error')
+      return { ok: false, message }
+    } finally { movingTargetId.value = '' }
   }
 
   function applyPlayer(): Promise<OperationResult> {
@@ -493,6 +531,8 @@ export const useQaStore = defineStore('qa', () => {
     ownedCardCounts,
     battle,
     selectedEntityId,
+    movingTargetId,
+    moveEntity,
     selectedEntity,
     selectedCell,
     selectedEquipmentTypeId,

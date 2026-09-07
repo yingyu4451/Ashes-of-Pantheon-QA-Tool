@@ -1,4 +1,4 @@
-param([string]$UnityEditorPath = 'D:\Unity Editor\2022.3.62f2c1\Editor', [string[]]$Cases = @('catalog', 'battle'))
+param([string]$UnityEditorPath = 'D:\Unity Editor\2022.3.62f2c1\Editor', [string[]]$Cases = @('catalog', 'battle', 'movement'))
 $ErrorActionPreference = 'Stop'
 $toolsRoot = Join-Path $UnityEditorPath 'Data/MonoBleedingEdge'
 $mono = Join-Path $toolsRoot 'bin/mono.exe'
@@ -9,7 +9,7 @@ $output = Join-Path ([IO.Path]::GetTempPath()) ('qa-bridge-tests-' + [guid]::New
 New-Item -ItemType Directory -Path $output | Out-Null
 Copy-Item -LiteralPath $json -Destination (Join-Path $output 'Newtonsoft.Json.dll')
 $executable = Join-Path $output 'BridgeTests.exe'
-& $mono $compiler -nologo -langversion:preview -target:exe "-out:$executable" "-r:$json" "-r:$netstandard" 'tests/bridge/EquipmentBridgeTests.cs' 'resources/unity-package/com.ashes-of-pantheon.qa-bridge/Editor/QaGameReflectionAdapter.cs' 'resources/package-bridge/plugin-src/AshesOfPantheonPackageBridge.cs'
+& $mono $compiler -nologo -langversion:preview -target:exe "-out:$executable" "-r:$json" "-r:$netstandard" 'tests/bridge/EquipmentBridgeTests.cs' 'tests/bridge/MovementBridgeTests.cs' 'resources/unity-package/com.ashes-of-pantheon.qa-bridge/Editor/QaGameReflectionAdapter.cs' 'resources/package-bridge/plugin-src/AshesOfPantheonPackageBridge.cs'
 if ($LASTEXITCODE -ne 0) { throw 'QA Bridge fixture compilation failed.' }
 & $mono $executable @Cases
 if ($LASTEXITCODE -ne 0) { throw 'QA Bridge regression test failed.' }

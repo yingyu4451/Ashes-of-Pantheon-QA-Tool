@@ -173,6 +173,12 @@ namespace AshesOfPantheon.QA.EditorBridge
                     var request = JsonConvert.DeserializeObject<GmRequest>(ReadBody(context.Request));
                     payload = QaMainThreadDispatcher.Invoke(() => m_adapter.ExecuteGm(request?.Command));
                 }
+                else if (context.Request.HttpMethod == "POST" && path == "/api/entities/move")
+                {
+                    var request = JObject.Parse(ReadBody(context.Request));
+                    request["expiresAt"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + 4000;
+                    payload = QaMainThreadDispatcher.Invoke(() => m_adapter.MoveEntity(request));
+                }
                 else if (context.Request.HttpMethod == "POST" && path == "/api/player")
                 {
                     var request = JObject.Parse(ReadBody(context.Request));

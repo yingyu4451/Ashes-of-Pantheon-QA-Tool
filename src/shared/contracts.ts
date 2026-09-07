@@ -48,6 +48,8 @@ export interface QaIntentStep {
 
 export interface QaEntity {
   instanceId: string
+  moveTargetId?: string
+  size?: GridPoint
   typeId: string
   name: string
   kind: EntityKind
@@ -62,6 +64,8 @@ export interface QaEntity {
 
 export interface QaPlayerState {
   instanceId: string
+  moveTargetId?: string
+  size?: GridPoint
   name: string
   position: GridPoint
   currentHp: number
@@ -74,6 +78,7 @@ export interface QaPlayerState {
 
 export interface QaBattleSnapshot {
   available?: boolean
+  movement?: { allowed: boolean; reason: string }
   sceneName: string
   mapName: string
   width: number

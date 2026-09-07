@@ -12,6 +12,7 @@ internal static class EquipmentBridgeTests
         var adapters = new object[] { new AshesOfPantheon.QA.EditorBridge.QaGameReflectionAdapter(), new AshesOfPantheon.QA.PackageBridge.QaGameReflectionAdapter() };
         foreach (var adapter in adapters)
         {
+            if (args.Contains("movement")) MovementBridgeTests.Run(adapter);
             if (args.Contains("catalog"))
             {
                 var catalog = JObject.FromObject(adapter.GetType().GetMethod("GetCatalog").Invoke(adapter, null));
@@ -126,7 +127,16 @@ namespace HappyHotel.Card
     }
     public class EquipmentCard { public string TypeId="Equipment01"; public Templates.EquipmentTemplate Template=>CardRegistry.Instance.Entries[0].template; public bool Bound=true; }
 }
-namespace HappyHotel.Core.Grid.Components { public class GridObjectComponent { public UnityEngine.Vector2Int Point; public UnityEngine.Vector2Int GetGridPosition()=>Point; } }
+namespace HappyHotel.Core.Grid.Components {
+    public class GridObjectComponent {
+        public UnityEngine.Vector2Int Point; public UnityEngine.Vector2Int Size = new UnityEngine.Vector2Int(1, 1);
+        public UnityEngine.Vector2Int GetGridPosition()=>Point; public UnityEngine.Vector2Int GetSize()=>Size;
+        public IEnumerable<UnityEngine.Vector2Int> GetOccupiedCells(UnityEngine.Vector2Int origin) {
+            for (var x=0;x<Size.x;x++) for(var y=0;y<Size.y;y++) yield return new UnityEngine.Vector2Int(origin.x+x,origin.y+y);
+        }
+    }
+    public class AutoMoveComponent { public bool IsVisualInterpolating; }
+}
 namespace HappyHotel.Prop
 {
     public class PropBase : UnityEngine.Component {}
@@ -151,4 +161,14 @@ namespace HappyHotel.Prop
     }
 }
 namespace HappyHotel.Inventory { public class EquipmentCardDeploymentService { public static EquipmentCardDeploymentService Instance {get;}=new EquipmentCardDeploymentService(); public bool IsBound(HappyHotel.Card.EquipmentCard card)=>card.Bound; } }
-namespace HappyHotel.Character { public class MainCharacter { public string CharacterId="MainCharacter"; } public class CharacterController { public static CharacterController Instance{get;}=new CharacterController(); public object[] GetAllCharacters()=>new object[]{new MainCharacter()}; } }
+namespace HappyHotel.Character {
+    public class MainCharacter : UnityEngine.Component {
+        public string CharacterId="MainCharacter";
+        public Core.Grid.Components.GridObjectComponent Grid = new Core.Grid.Components.GridObjectComponent();
+        public Core.Grid.Components.AutoMoveComponent Auto = new Core.Grid.Components.AutoMoveComponent();
+        public Components.MainCharacterRelocationComponent Relocation;
+        public MainCharacter() { Relocation = new Components.MainCharacterRelocationComponent(this); }
+        public T GetBehaviorComponent<T>() where T:class => Grid as T ?? Auto as T ?? Relocation as T;
+    }
+    public class CharacterController { public static CharacterController Instance{get;}=new CharacterController(); public MainCharacter Player = new MainCharacter(); public object[] GetAllCharacters()=>new object[]{Player}; }
+}

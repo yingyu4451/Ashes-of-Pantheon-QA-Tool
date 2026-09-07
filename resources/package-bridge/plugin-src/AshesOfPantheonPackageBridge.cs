@@ -20,7 +20,7 @@ using UnityEngine.SceneManagement;
 
 namespace AshesOfPantheon.QA.PackageBridge
 {
-    [BepInPlugin("com.ashes-of-pantheon.qa.package-bridge", "Ashes of Pantheon QA Package Bridge", "0.3.1")]
+    [BepInPlugin("com.ashes-of-pantheon.qa.package-bridge", "Ashes of Pantheon QA Package Bridge", "0.3.2")]
     public sealed class PackageBridgePlugin : BaseUnityPlugin
     {
         private static QaBridgeServer s_server;
@@ -183,6 +183,12 @@ namespace AshesOfPantheon.QA.PackageBridge
                 if (context.Request.HttpMethod == "GET" && path == "/api/status") payload = InvokeMain(m_adapter.GetStatus);
                 else if (context.Request.HttpMethod == "GET" && path == "/api/catalog") payload = InvokeMain(m_adapter.GetCatalog);
                 else if (context.Request.HttpMethod == "GET" && path == "/api/battle") payload = InvokeMain(m_adapter.GetBattleSnapshot);
+                else if (context.Request.HttpMethod == "POST" && path == "/api/entities/move")
+                {
+                    var request = JObject.Parse(ReadBody(context.Request));
+                    request["expiresAt"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + 4000;
+                    payload = InvokeMain(() => m_adapter.MoveEntity(request));
+                }
                 else if (context.Request.HttpMethod == "GET" && path == "/api/cards") payload = InvokeMain(m_adapter.GetCardInventorySnapshot);
                 else if (context.Request.HttpMethod == "POST" && path == "/api/cards")
                 {
@@ -622,6 +628,7 @@ namespace AshesOfPantheon.QA.PackageBridge
                 turn = 0,
                 phase = "runtime",
                 player = BuildPlayer(characters.FirstOrDefault(IsMainCharacter)),
+                movement = MovementAvailability(),
                 entities = enemies.Select((enemy, index) => BuildEntity(enemy, index)).Where(value => value != null).Concat(GetEquipmentEntities()).ToList()
             };
         }
@@ -685,7 +692,7 @@ namespace AshesOfPantheon.QA.PackageBridge
         }
 
 
-        private IEnumerable<object> GetEquipmentEntities()
+        private IEnumerable<object> GetEquipmentObjects()
         {
             var controller = GetSingleton("HappyHotel.Prop.PropController");
             var equipmentType = FindType("HappyHotel.Prop.EquipmentPropBase");
@@ -702,15 +709,141 @@ namespace AshesOfPantheon.QA.PackageBridge
                 if (ReadMember<bool>(visual, "IsDisappearPlaying")) continue;
                 var card = Invoke(prop, "GetSourceEquipment");
                 if (card != null && deployment != null && Invoke(deployment, "IsBound", card) is bool bound && !bound) continue;
+                yield return prop;
+            }
+        }
+
+        private IEnumerable<object> GetEquipmentEntities()
+        {
+            foreach (var prop in GetEquipmentObjects())
+            {
+                var card = Invoke(prop, "GetSourceEquipment");
                 var typeId = ResolveTypeId(card ?? prop);
                 var definition = ResolveRegistryEntry("HappyHotel.Card.CardRegistry", typeId, "itemNameLocalized");
                 var point = GetGridPosition(prop);
                 var id = prop is UnityEngine.Object obj ? obj.GetInstanceID().ToString() : System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(prop).ToString();
                 yield return new {
-                    instanceId = $"equipment#{id}", typeId, definition.name, kind = "equipment",
+                    instanceId = $"equipment#{id}", moveTargetId = MoveTargetId(prop), size = GridSize(prop), typeId, definition.name, kind = "equipment",
                     position = new { x = point.x, y = point.y }, buffs = Array.Empty<object>()
                 };
             }
+        }
+
+
+        private static string MoveTargetId(object target)
+        {
+            return target is UnityEngine.Object obj && obj != null ? obj.GetInstanceID().ToString() : null;
+        }
+
+        private static object GridSize(object target)
+        {
+            var grid = GetBehaviorComponent(target, "HappyHotel.Core.Grid.Components.GridObjectComponent");
+            var size = Invoke(grid, "GetSize") is Vector2Int value ? value : new Vector2Int(1, 1);
+            return new { x = size.x, y = size.y };
+        }
+
+        private static string MovementBlockReason()
+        {
+            var game = GetSingleton("HappyHotel.GameManager.GameManager");
+            var turn = GetSingleton("HappyHotel.GameManager.TurnManager");
+            if (Invoke(game, "GetGameState")?.ToString() != "Idle" ||
+                Invoke(turn, "GetCurrentPhase")?.ToString() != "Player" || ReadMember<bool>(turn, "IsAdvancingTurn"))
+                return "请等待玩家可操作的空闲阶段。";
+            var blocks = GetSingleton("HappyHotel.GameManager.BattleFlowBlockService");
+            var settling = FindType("HappyHotel.GameManager.BattleActionSettlementService")
+                ?.GetProperty("HasActivePlayerActions", BindingFlags.Public | BindingFlags.Static)?.GetValue(null);
+            if (ReadMember<bool>(blocks, "IsInputBlocked") || ReadMember<bool>(blocks, "IsFlowBlocked") || settling is true)
+                return "战斗正在结算，暂时不能移动对象。";
+            return null;
+        }
+
+        private static object MovementAvailability()
+        {
+            var reason = MovementBlockReason();
+            return new { allowed = reason == null, reason = reason ?? string.Empty };
+        }
+
+        public object MoveEntity(JObject request)
+        {
+            if (request?["expiresAt"] != null && request.Value<long>("expiresAt") < DateTimeOffset.UtcNow.ToUnixTimeMilliseconds())
+                return Failure("移动请求已过期，请重新拖动。");
+            var blocked = MovementBlockReason();
+            if (blocked != null) return Failure(blocked);
+            if (!TryReadPoint(request?["from"], out var from) || !TryReadPoint(request?["to"], out var to))
+                return Failure("移动坐标必须是整数。");
+            var targetId = request.Value<string>("moveTargetId");
+            if (string.IsNullOrWhiteSpace(targetId)) return Failure("缺少对象的运行实例标识，请更新 Bridge 并刷新。");
+            var player = GetControllerObjects("HappyHotel.Character.CharacterController", "GetAllCharacters").FirstOrDefault(IsMainCharacter);
+            var candidates = new[] { player }.Concat(GetControllerObjects("HappyHotel.Enemy.EnemyController", "GetAllEnemies")).Concat(GetEquipmentObjects());
+            var target = candidates.FirstOrDefault(item => MoveTargetId(item) == targetId);
+            if (target == null) return Failure("对象已消失，请刷新后重试。");
+            var current = GetGridPosition(target);
+            if (current.x != from.x || current.y != from.y) return Failure("对象位置已变化，请重新拖动。");
+            if (from.x == to.x && from.y == to.y) return Success("对象位置未改变。");
+            var grid = GetBehaviorComponent(target, "HappyHotel.Core.Grid.Components.GridObjectComponent");
+            var manager = GetSingleton("HappyHotel.Core.Grid.GridObjectManager");
+            var map = GetSingleton("HappyHotel.Map.LevelMapManager");
+            if (grid == null || manager == null || map == null) return Failure("游戏地图尚未初始化。");
+            if (!Enumerate(Invoke(manager, "GetObjectsAt", current)).Any(other => ReferenceEquals(other, target)))
+                return Failure("对象当前未在战场占格，不能移动。");
+            var occupied = Enumerate(Invoke(grid, "GetOccupiedCells", to)).OfType<Vector2Int>().ToList();
+            if (occupied.Count == 0) return Failure("对象占格信息不可用。");
+            foreach (var point in occupied)
+            {
+                if (!(Invoke(map, "IsWalkable", point.x, point.y) is bool walkable) || !walkable)
+                    return Failure("目标位置超出地图或不可通行。");
+                if (Enumerate(Invoke(manager, "GetObjectsAt", point)).Any(other => !ReferenceEquals(other, target)))
+                    return Failure("目标格已被占用。");
+                if (IsInstanceOf(target, "HappyHotel.Prop.EquipmentPropBase") &&
+                    Invoke(manager, "HasEquipmentSpawnBlockerAt", point, target) is bool reserved && reserved)
+                    return Failure("该格禁止放置装备。");
+            }
+            var autoMove = GetBehaviorComponent(target, "HappyHotel.Core.Grid.Components.AutoMoveComponent");
+            if (ReadMember<bool>(autoMove, "IsVisualInterpolating")) return Failure("对象正在移动，请稍后重试。");
+            if (ReferenceEquals(target, player))
+            {
+                var relocation = GetBehaviorComponent(player, "HappyHotel.Character.Components.MainCharacterRelocationComponent");
+                if (relocation == null || ReadMember<bool>(relocation, "IsMovementGateHeld"))
+                    return Failure("主角迁移不可用或仍在结算，请稍后重试。");
+                var requestType = relocation.GetType().GetNestedType("RelocationRequest", BindingFlags.Public);
+                var begin = relocation.GetType().GetMethod("TryBeginRelocation", BindingFlags.Public | BindingFlags.Instance);
+                var settle = relocation.GetType().GetMethods(BindingFlags.Public | BindingFlags.Instance)
+                    .FirstOrDefault(method => method.Name == "SettleImmediately" && method.GetParameters().Length == 2);
+                if (requestType == null || begin == null || settle == null) return Failure("当前游戏不支持主角迁移。");
+                var move = Activator.CreateInstance(requestType);
+                WriteMember(move, "Destination", to);
+                WriteMember(move, "ConsumedMovementCells", 0);
+                WriteMember(move, "PreserveStraightMovement", false);
+                WriteMember(move, "Source", "QA.ObjectMove");
+                var arguments = new[] { move, null };
+                if (!(begin.Invoke(relocation, arguments) is bool begun) || !begun) return Failure("游戏拒绝了主角迁移。");
+                var handle = arguments[1];
+                try
+                {
+                    var result = Invoke(relocation, "SettleImmediately", handle, "QA.ObjectMove");
+                    if (!ReadMember<bool>(result, "Succeeded")) return Failure("主角移动结算失败，请刷新实际位置。");
+                }
+                finally
+                {
+                    if (ReadMember<bool>(handle, "IsPending")) Invoke(relocation, "SettleImmediately", handle, "QA.ObjectMoveCleanup");
+                }
+            }
+            else if (!(Invoke(manager, "MoveObject", target, to, null) is bool moved) || !moved)
+                return Failure("游戏拒绝了移动，请刷新实际位置。");
+            Invoke(GetSingleton("HappyHotel.Prop.RoutePreview.RoutePreviewManager"), "RequestRefresh", "QA.ObjectMove", target);
+            current = GetGridPosition(target);
+            return current.x == to.x && current.y == to.y ? Success($"对象已移动到 {to.x}, {to.y}。") : Failure("移动后的位置与目标不一致，请刷新。");
+        }
+
+        private static bool TryReadPoint(JToken token, out Vector2Int point)
+        {
+            point = default;
+            if (token is not JObject value || value["x"]?.Type != JTokenType.Integer || value["y"]?.Type != JTokenType.Integer) return false;
+            var x = value.Value<long>("x");
+            var y = value.Value<long>("y");
+            if (x < int.MinValue || x > int.MaxValue || y < int.MinValue || y > int.MaxValue) return false;
+            point = new Vector2Int((int)x, (int)y);
+            return true;
         }
 
         private object BuildPlayer(object player)
@@ -719,7 +852,7 @@ namespace AshesOfPantheon.QA.PackageBridge
             var hp = GetBehaviorComponent(player, "HappyHotel.Core.ValueProcessing.Components.HitPointValueComponent");
             var cost = GetSingleton("HappyHotel.GameManager.CostManager");
             var point = GetGridPosition(player);
-            return new { instanceId = "player-main", name = "主角", position = new { x = point.x, y = point.y }, currentHp = ReadMember<int>(hp, "CurrentHitPoint"), maxHp = ReadMember<int>(hp, "MaxHitPoint"), currentCost = ReadMember<int>(cost, "CurrentCost"), maxCost = ReadMember<int>(cost, "MaxCost"), blessings = Array.Empty<object>(), buffs = GetBuffs(player) };
+            return new { instanceId = "player-main", moveTargetId = MoveTargetId(player), size = GridSize(player), name = "主角", position = new { x = point.x, y = point.y }, currentHp = ReadMember<int>(hp, "CurrentHitPoint"), maxHp = ReadMember<int>(hp, "MaxHitPoint"), currentCost = ReadMember<int>(cost, "CurrentCost"), maxCost = ReadMember<int>(cost, "MaxCost"), blessings = Array.Empty<object>(), buffs = GetBuffs(player) };
         }
 
         private object BuildEntity(object target, int index)
@@ -730,7 +863,7 @@ namespace AshesOfPantheon.QA.PackageBridge
             var point = GetGridPosition(target);
             var typeId = ResolveTypeId(target);
             var executor = GetBehaviorComponent(target, "HappyHotel.Intent.Components.TurnEndIntentExecutorComponent");
-            return new { instanceId = $"{typeId}#{index}", typeId, name = typeId, kind = "enemy", position = new { x = point.x, y = point.y }, currentHp = ReadMember<int>(hp, "CurrentHitPoint"), maxHp = ReadMember<int>(hp, "MaxHitPoint"), attack = ReadMember<int>(attack, "AttackPower"), buffs = GetBuffs(target), intents = GetIntents(executor), loopStartIndex = executor == null ? -1 : Convert.ToInt32(Invoke(executor, "GetLoopStartIndex")) };
+            return new { instanceId = $"{typeId}#{index}", moveTargetId = MoveTargetId(target), size = GridSize(target), typeId, name = typeId, kind = "enemy", position = new { x = point.x, y = point.y }, currentHp = ReadMember<int>(hp, "CurrentHitPoint"), maxHp = ReadMember<int>(hp, "MaxHitPoint"), attack = ReadMember<int>(attack, "AttackPower"), buffs = GetBuffs(target), intents = GetIntents(executor), loopStartIndex = executor == null ? -1 : Convert.ToInt32(Invoke(executor, "GetLoopStartIndex")) };
         }
 
         private object[] GetBuffs(object target)
