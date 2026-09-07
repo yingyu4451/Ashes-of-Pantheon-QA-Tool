@@ -1,6 +1,6 @@
 {
   "name": "ashes-of-pantheon-qa-tool",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "packageManager": "pnpm@11.25.0",
   "private": true,
   "description": "Ashes of Pantheon runtime QA workstation",
@@ -74,6 +74,9 @@
         "from": "resources/package-bridge/plugin/AshesOfPantheon.QA.PackageBridge.dll",
         "to": "package-bridge/plugin/AshesOfPantheon.QA.PackageBridge.dll"
       }
+    ],
+    "extraFiles": [
+      { "from": "docs/usage.md", "to": "USAGE.md" }
     ],
     "win": {
       "target": "zip"

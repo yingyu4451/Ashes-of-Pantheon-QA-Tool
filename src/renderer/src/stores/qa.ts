@@ -1,4 +1,4 @@
-import { computed, ref, toRaw, watch } from 'vue'
+import { computed, onScopeDispose, ref, toRaw, watch } from 'vue'
 import { defineStore } from 'pinia'
 import type {
   CardCategory,
@@ -29,11 +29,12 @@ export const useQaStore = defineStore('qa', () => {
   const connectedInstanceId = ref<string | null>(null)
   const lastOperationMessage = ref('')
   const notice = ref<{ tone: NoticeTone; message: string } | null>(null)
+  let noticeTimer: ReturnType<typeof setTimeout> | undefined
   const unityProjectPath = ref('')
   const gameBuildPath = ref('')
   const updateStatus = ref<UpdateStatus>({
     phase: nativeMode ? 'idle' : 'disabled',
-    currentVersion: '0.1.8',
+    currentVersion: '0.1.9',
     message: nativeMode ? '尚未检查更新。' : '开发模式不检查更新。'
   })
   const runtimeReady = ref(!nativeMode)
@@ -120,13 +121,19 @@ export const useQaStore = defineStore('qa', () => {
   }, { immediate: true })
 
   function showNotice(message: string, tone: NoticeTone = 'info'): void {
+    if (noticeTimer) clearTimeout(noticeTimer)
     lastOperationMessage.value = message
     notice.value = { tone, message }
+    noticeTimer = setTimeout(clearNotice, 2000)
   }
 
   function clearNotice(): void {
+    if (noticeTimer) clearTimeout(noticeTimer)
+    noticeTimer = undefined
     notice.value = null
   }
+
+  onScopeDispose(() => { if (noticeTimer) clearTimeout(noticeTimer) })
 
   function markDisconnected(message = 'Unity Editor 连接已断开。'): void {
     if (connectionMonitor) clearInterval(connectionMonitor)
@@ -170,13 +177,17 @@ export const useQaStore = defineStore('qa', () => {
     const item = catalog.value.equipment.find((entry) => entry.typeId === selectedEquipmentTypeId.value)
     if (!point || !item) return false
     if (connectionStatus.value === 'connected') {
-      const result = await executeGm(`/spawnEquipment ${item.typeId} ${point.x} ${point.y}`)
-      if (result.ok) await refreshRuntime()
+      const result = await executeGm(`/spawnEquipment ${item.typeId} ${point.x} ${point.y}`, false)
+      if (result.ok) {
+        const refresh = await refreshRuntime(false)
+        if (!refresh.ok) result.message += ` ${refresh.message}`
+      }
+      showNotice(result.message, result.ok ? 'success' : 'error')
       return result.ok
     }
     const occupied = battle.value.entities.some((entity) => entity.position.x === point.x && entity.position.y === point.y)
       || (battle.value.player.position.x === point.x && battle.value.player.position.y === point.y)
-    if (occupied) return false
+    if (occupied) { showNotice('选定格不可放置装备。', 'error'); return false }
     battle.value.entities.push({
       instanceId: `equipment-${Date.now()}`,
       typeId: item.typeId,
@@ -185,6 +196,7 @@ export const useQaStore = defineStore('qa', () => {
       position: point,
       buffs: []
     })
+    showNotice('装备已放置到选定格。', 'success')
     return true
   }
 
@@ -344,7 +356,7 @@ export const useQaStore = defineStore('qa', () => {
     return mutateOwnedCard(typeId, 'DELETE')
   }
 
-  async function executeGm(command: string): Promise<OperationResult> {
+  async function executeGm(command: string, announce = true): Promise<OperationResult> {
     if (!window.qaNative || !connectedInstanceId.value) return { ok: false, message: '没有已连接的运行实例。' }
     const result = await window.qaNative.requestBridge<{ success: boolean; message: string }>({
       instanceId: connectedInstanceId.value,
@@ -356,12 +368,12 @@ export const useQaStore = defineStore('qa', () => {
       ok: Boolean(result.ok && result.data?.success),
       message: result.data?.message ?? result.message
     }
-    showNotice(operation.message, operation.ok ? 'success' : 'error')
+    if (announce) showNotice(operation.message, operation.ok ? 'success' : 'error')
     return operation
   }
 
   async function requestMutation(path: string, method: 'POST' | 'DELETE', body: unknown): Promise<OperationResult> {
-    if (connectionStatus.value === 'demo') return { ok: true, message: '演示快照已更新。' }
+    if (connectionStatus.value === 'demo') { showNotice('演示快照已更新。', 'success'); return { ok: true, message: '演示快照已更新。' } }
     if (!window.qaNative || !connectedInstanceId.value) return { ok: false, message: '没有已连接的运行实例。' }
     const result = await window.qaNative.requestBridge<{ success: boolean; message: string }>({
       instanceId: connectedInstanceId.value,
@@ -373,15 +385,20 @@ export const useQaStore = defineStore('qa', () => {
       ok: Boolean(result.ok && result.data?.success),
       message: result.data?.message ?? result.message
     }
+    if (operation.ok) {
+      const refresh = await refreshRuntime(false)
+      if (!refresh.ok) operation.message += ` ${refresh.message}`
+    }
     showNotice(operation.message, operation.ok ? 'success' : 'error')
-    if (operation.ok) await refreshRuntime()
     return operation
   }
 
   async function moveEntity(entity: QaEntity, destination: GridPoint): Promise<OperationResult> {
     const instanceId = connectedInstanceId.value
     if (movingTargetId.value || !runtimeReady.value || connectionStatus.value !== 'connected' || !window.qaNative || !instanceId || !entity.moveTargetId || !battle.value.movement?.allowed) {
-      return { ok: false, message: battle.value.movement?.reason || '当前不能移动对象，请连接并更新 Bridge。' }
+      const message = battle.value.movement?.reason || '当前不能移动对象，请连接并更新 Bridge。'
+      showNotice(message, 'error')
+      return { ok: false, message }
     }
     movingTargetId.value = entity.moveTargetId
     try {

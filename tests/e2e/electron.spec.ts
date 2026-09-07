@@ -240,7 +240,7 @@ test('packaged game requires an external Bridge in a temporary copy', async () =
   }
 })
 
-test('connection shows persistent success feedback and opens the available workspace', async () => {
+test('connection shows success feedback and retains connection state after the notice expires', async () => {
   const localAppData = await mkdtemp(join(tmpdir(), 'ashes-qa-instances-'))
   const userDataRoot = await mkdtemp(join(tmpdir(), 'ashes-qa-session-'))
   const token = 'test-token'
@@ -296,6 +296,8 @@ test('connection shows persistent success feedback and opens the available works
 
     await expect(page.getByRole('status').filter({ hasText: '卡牌目录已同步；进入 Play Mode 后可读取战斗状态。' })).toBeVisible()
     await expect(page.getByRole('heading', { name: '卡牌目录' })).toBeVisible()
+    await expect(page.getByText('Editor 已连接 · 未进入 Play Mode')).toBeVisible()
+    await expect(page.getByRole('status').filter({ hasText: '卡牌目录已同步；进入 Play Mode 后可读取战斗状态。' })).toHaveCount(0)
     await expect(page.getByText('Editor 已连接 · 未进入 Play Mode')).toBeVisible()
     await page.getByRole('button', { name: '连接', exact: true }).first().click()
     await expect(page.getByRole('button', { name: '已连接' })).toBeDisabled()

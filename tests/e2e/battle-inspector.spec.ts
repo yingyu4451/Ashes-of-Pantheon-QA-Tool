@@ -99,7 +99,7 @@ test('blessing errors do not fabricate owned state, and pending or empty choices
   await expect(inspector.getByLabel('选择祝福')).toBeDisabled()
   await page.screenshot({ path: 'test-results/blessing-loading.png' })
   await page.evaluate(() => (window as unknown as { inspectorTest: { finish: () => void } }).inspectorTest.finish())
-  await expect(inspector.getByText('祝福添加失败，请刷新后重试。', { exact: true })).toBeVisible()
+  await expect(page.getByRole('status').filter({ hasText: '祝福添加失败，请刷新后重试。' })).toBeVisible()
   await expect(inspector.getByText('当前没有祝福', { exact: true })).toBeVisible()
   await expect(add).toBeEnabled()
   await page.getByRole('button', { name: '关闭提示', exact: true }).click()
@@ -167,6 +167,14 @@ test('desktop controls use the daisyUI theme and the grid is named Battle Map', 
   await expect(page.getByRole('tablist', { name: '对象详情' })).toHaveClass(/tabs/)
 })
 
+test('the global help entry opens the complete written user guide', async ({ page }) => {
+  const help = page.getByRole('link', { name: '使用说明', exact: true })
+  await expect(help).toBeVisible()
+  await expect(help).toHaveAttribute('title', '使用说明')
+  await expect(help).toHaveAttribute('href', 'https://github.com/yingyu4451/Ashes-of-Pantheon-QA-Tool/blob/main/docs/usage.md')
+  await expect(help).toHaveAttribute('target', '_blank')
+})
+
 test('placed equipment appears in both the object list and battle map after refreshing', async ({ page }) => {
   await page.getByRole('button', { name: '选择格 -2, 1', exact: true }).click()
   await page.getByRole('button', { name: '放置到 -2, 1', exact: true }).click()
@@ -177,6 +185,8 @@ test('placed equipment appears in both the object list and battle map after refr
   const inspector = page.getByRole('complementary', { name: '对象检查器' })
   await expect(inspector.getByRole('heading', { name: '测试长剑', exact: true })).toBeVisible()
   await expect(inspector.getByText('Equipment01', { exact: true })).toBeVisible()
+  await expect(page.getByText('修改已同步。', { exact: true })).toHaveCount(1)
+  await expect(page.getByText('目录与战斗数据已刷新。', { exact: true })).toHaveCount(0)
   await page.getByRole('button', { name: '关闭提示' }).click()
   await page.screenshot({ path: 'test-results/placed-equipment-desktop.png' })
   await page.evaluate(() => Object.assign((window as unknown as { inspectorTest: object }).inspectorTest, { failPlacement: true }))

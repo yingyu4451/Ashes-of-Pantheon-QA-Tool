@@ -255,11 +255,10 @@ async function applyIntentSequence(): Promise<void> {
             </span>
           </label>
 
-          <button v-if="entity.kind !== 'equipment'" type="button" class="btn btn-primary btn-sm w-full" :disabled="propertiesBusy" @click="applyProperties">
+          <button v-if="entity.kind !== 'equipment'" type="button" class="btn btn-primary btn-sm w-full" title="提交当前对象属性" :disabled="propertiesBusy" @click="applyProperties">
             <RefreshCw v-if="propertiesBusy" :size="14" class="animate-spin" aria-hidden="true" />
             <Save v-else :size="14" aria-hidden="true" />{{ propertiesBusy ? '应用中…' : '应用属性' }}
           </button>
-          <p v-if="store.lastOperationMessage" class="m-0 text-[10px] leading-5 text-[#d5b75f]" aria-live="polite">{{ store.lastOperationMessage }}</p>
         </div>
 
           <section v-else-if="activeTab === 'blessings' && entity.kind === 'player'" aria-labelledby="blessings-heading">
@@ -293,7 +292,6 @@ async function applyIntentSequence(): Promise<void> {
               </li>
             </ul>
             <p v-else class="m-0 py-5 text-center text-[11px] text-white/40">当前没有祝福</p>
-            <p v-if="store.lastOperationMessage" class="m-0 break-words text-[10px] leading-5 text-[#d5b75f]" aria-live="polite">{{ store.lastOperationMessage }}</p>
           </section>
 
         <div v-else-if="activeTab === 'buffs'" class="space-y-4">
@@ -314,7 +312,7 @@ async function applyIntentSequence(): Promise<void> {
                 <input v-model.number="newBuffDuration" type="number" name="buff-duration" min="1" autocomplete="off" class="input input-sm mt-1 w-full px-2 utility-font text-[12px]" />
               </label>
             </div>
-            <button type="button" class="btn btn-primary btn-sm w-full" @click="addBuff">
+            <button type="button" class="btn btn-primary btn-sm w-full" title="添加选中的 BUFF" @click="addBuff">
               <Plus :size="14" aria-hidden="true" />
               添加 BUFF
             </button>
@@ -372,13 +370,12 @@ async function applyIntentSequence(): Promise<void> {
           </ol>
 
           <div class="flex gap-2">
-            <button type="button" class="btn btn-neutral btn-sm flex-1" @click="clearIntents">
+            <button type="button" class="btn btn-neutral btn-sm flex-1" title="清空当前意图序列" @click="clearIntents">
               <RotateCcw :size="14" aria-hidden="true" />
               清空
             </button>
-            <button type="button" class="btn btn-primary btn-sm flex-1" @click="applyIntentSequence">应用序列</button>
+            <button type="button" class="btn btn-primary btn-sm flex-1" title="提交当前怪物意图序列" @click="applyIntentSequence">应用序列</button>
           </div>
-          <p v-if="store.lastOperationMessage" class="m-0 text-[10px] leading-5 text-[#d5b75f]" aria-live="polite">{{ store.lastOperationMessage }}</p>
         </div>
       </div>
     </template>

@@ -56,6 +56,7 @@ async function pointAt(page: Page, x: number, y: number) {
 }
 
 test('long press shows progress and commits a game movement only on drop', async ({ page }) => {
+  await page.clock.pauseAt(new Date(Date.now() + 1000))
   const object = await pressObject(page, '主角', 300)
   const progress = page.getByRole('progressbar', { name: '长按移动进度' })
   await expect(progress).toBeVisible()
@@ -72,6 +73,13 @@ test('long press shows progress and commits a game movement only on drop', async
   await expect(object).toHaveAttribute('data-grid-position', '-2,-2')
   expect(await page.evaluate(() => (window as unknown as { moveTest: { moves: unknown[] } }).moveTest.moves)).toEqual([{ moveTargetId: '101', from: { x: 0, y: 0 }, to: { x: -2, y: -2 } }])
   await expect(page.getByTestId('move-preview')).toHaveCount(0)
+  await expect(page.getByText('对象已移动。', { exact: true })).toHaveCount(1)
+  await page.clock.runFor(180)
+  await expect(page.getByRole('status').filter({ hasText: '对象已移动。' })).toHaveCSS('opacity', '1')
+  await page.screenshot({ path: 'test-results/notice-single-result.png' })
+  await page.clock.runFor(2200)
+  await expect(page.getByText('对象已移动。', { exact: true })).toHaveCount(0)
+  await page.screenshot({ path: 'test-results/notice-after-dismissal.png' })
 })
 
 test('short press, early motion, Escape, window blur and off-map drops never move the game', async ({ page }) => {

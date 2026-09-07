@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Cable, RefreshCw } from '@lucide/vue'
+import { Cable, CircleHelp, RefreshCw } from '@lucide/vue'
 import type { ConnectionStatus } from '@shared/contracts'
 
 defineProps<{
@@ -33,6 +33,7 @@ const emit = defineEmits<{ openSetup: []; refresh: [] }>()
       <button type="button" class="btn btn-neutral btn-square btn-sm" title="刷新运行时状态" aria-label="刷新运行时状态" :disabled="status !== 'connected'" @click="emit('refresh')">
         <RefreshCw :size="16" aria-hidden="true" />
       </button>
+      <a class="btn btn-neutral btn-square btn-sm" href="https://github.com/yingyu4451/Ashes-of-Pantheon-QA-Tool/blob/main/docs/usage.md" target="_blank" rel="noopener noreferrer" title="使用说明" aria-label="使用说明"><CircleHelp :size="16" aria-hidden="true" /></a>
       <button type="button" class="btn btn-neutral btn-sm" @click="emit('openSetup')">
         <Cable :size="15" aria-hidden="true" />
         <span class="max-[520px]:sr-only">连接</span>

@@ -13,7 +13,6 @@ const busy = ref(false)
 const connectingInstanceId = ref('')
 const refreshingInstances = ref(false)
 const packageBridgeBusy = ref(false)
-const statusMessage = ref('')
 let instanceRefreshTimer: ReturnType<typeof setInterval> | undefined
 let buildInspectionRevision = 0
 const updatePhaseLabels: Record<UpdatePhase, string> = {
@@ -30,7 +29,7 @@ const updatePhaseLabels: Record<UpdatePhase, string> = {
 
 async function selectUnityProject(): Promise<void> {
   if (!window.qaNative) {
-    statusMessage.value = '目录选择仅在 Electron 应用中可用。'
+    store.showNotice('目录选择仅在 Electron 应用中可用。', 'info')
     return
   }
   const path = await window.qaNative.selectDirectory('选择 Ashes of Pantheon Unity 项目')
@@ -49,12 +48,10 @@ async function installBridge(): Promise<void> {
   busy.value = true
   try {
     const result = await window.qaNative.installEditorBridge(store.unityProjectPath)
-    statusMessage.value = result.message
     store.showNotice(result.message, result.ok ? 'success' : 'error')
     projectInspection.value = await window.qaNative.inspectUnityProject(store.unityProjectPath)
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Bridge 安装或更新失败。请重新选择 Unity 项目后重试。'
-    statusMessage.value = message
     store.showNotice(message, 'error')
   } finally {
     busy.value = false
@@ -67,12 +64,10 @@ async function uninstallBridge(): Promise<void> {
   busy.value = true
   try {
     const result = await window.qaNative.uninstallEditorBridge(store.unityProjectPath)
-    statusMessage.value = result.message
     store.showNotice(result.message, result.ok ? 'success' : 'error')
     projectInspection.value = await window.qaNative.inspectUnityProject(store.unityProjectPath)
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Bridge 卸载失败。请关闭 Unity 后重试。'
-    statusMessage.value = message
     store.showNotice(message, 'error')
   } finally {
     busy.value = false
@@ -81,7 +76,7 @@ async function uninstallBridge(): Promise<void> {
 
 async function selectBuild(): Promise<void> {
   if (!window.qaNative) {
-    statusMessage.value = '游戏包识别仅在 Electron 应用中可用。'
+    store.showNotice('游戏包识别仅在 Electron 应用中可用。', 'info')
     return
   }
   const path = await window.qaNative.selectDirectory('选择游戏包目录')
@@ -159,7 +154,6 @@ async function connect(instance: BridgeInstance): Promise<void> {
   connectingInstanceId.value = instance.instanceId
   try {
     const result = await store.connectToInstance(instance)
-    statusMessage.value = result.message
     if (result.ok) {
       store.activeWorkspace = store.runtimeReady ? 'battle' : 'cards'
     }
@@ -214,7 +208,7 @@ onUnmounted(() => {
         <div class="space-y-3">
           <div class="flex min-w-0 gap-2">
             <input class="input input-sm min-w-0 flex-1 px-3 utility-font text-[11px]" :value="store.unityProjectPath" name="unity-project-path" autocomplete="off" readonly placeholder="未选择 Unity 项目…" aria-label="Unity 项目路径" />
-            <button type="button" class="btn btn-neutral btn-sm shrink-0" @click="selectUnityProject"><FolderOpen :size="15" aria-hidden="true" />选择项目</button>
+            <button type="button" class="btn btn-neutral btn-sm shrink-0" title="选择 Unity 项目根目录" @click="selectUnityProject"><FolderOpen :size="15" aria-hidden="true" />选择项目</button>
           </div>
 
           <div v-if="projectInspection" class="flex flex-wrap items-center gap-x-5 gap-y-2 border border-white/10 bg-white/[0.025] px-3 py-2 text-[11px]">
@@ -224,7 +218,7 @@ onUnmounted(() => {
           </div>
 
           <div class="flex gap-2">
-            <button type="button" class="btn btn-primary btn-sm" :disabled="busy || !projectInspection?.valid" @click="installBridge">
+            <button type="button" class="btn btn-primary btn-sm" title="安装或更新 Editor Bridge" :disabled="busy || !projectInspection?.valid" @click="installBridge">
               <RefreshCw v-if="busy" :size="15" class="animate-spin" aria-hidden="true" />
               <PackageCheck v-else :size="15" aria-hidden="true" />
               {{ busy ? '处理中…' : projectInspection?.bridgeInstalled ? '更新 Bridge' : '安装 Bridge' }}
@@ -242,7 +236,7 @@ onUnmounted(() => {
         <div class="space-y-3">
           <div class="flex min-w-0 gap-2">
             <input class="input input-sm min-w-0 flex-1 px-3 utility-font text-[11px]" :value="store.gameBuildPath" name="game-build-path" autocomplete="off" readonly placeholder="未选择游戏包…" aria-label="游戏包路径" />
-            <button type="button" class="btn btn-neutral btn-sm shrink-0" @click="selectBuild"><FolderOpen :size="15" aria-hidden="true" />选择游戏包</button>
+            <button type="button" class="btn btn-neutral btn-sm shrink-0" title="选择打包游戏所在目录" @click="selectBuild"><FolderOpen :size="15" aria-hidden="true" />选择游戏包</button>
           </div>
           <div v-if="buildInspection" class="flex flex-wrap items-center gap-x-5 gap-y-2 border border-white/10 bg-white/[0.025] px-3 py-2 text-[11px]">
             <span :class="buildInspection.valid ? 'text-[#67b49e]' : 'text-[#dd6958]'">{{ buildInspection.message }}</span>
@@ -368,7 +362,6 @@ onUnmounted(() => {
         </div>
       </section>
 
-      <p class="m-0 min-h-5 border-t border-white/8 pt-4 text-[11px] text-[#d7b95f]" aria-live="polite">{{ statusMessage }}</p>
     </div>
   </section>
 </template>

@@ -7,7 +7,6 @@ import { useQaStore } from '@/stores/qa'
 import type { GridPoint, QaEntity } from '@shared/contracts'
 
 const store = useQaStore()
-const placementMessage = ref('')
 const placementBusy = ref(false)
 const selectedEquipment = computed(() => store.catalog.equipment.find((item) => item.typeId === store.selectedEquipmentTypeId))
 const gridViewport = ref<HTMLElement | null>(null)
@@ -95,7 +94,6 @@ type MoveGesture = { entity: QaEntity; phase: 'holding' | 'dragging' | 'targetin
 const moving = ref<MoveGesture | null>(null)
 const holdProgress = ref(0)
 const dropCell = ref<GridPoint | null>(null)
-const moveMessage = ref('')
 const windowWidth = ref(window.innerWidth)
 const windowHeight = ref(window.innerHeight)
 function resizeWindow(): void { windowWidth.value = window.innerWidth; windowHeight.value = window.innerHeight; cancelMove() }
@@ -155,7 +153,6 @@ function startHold(event: PointerEvent, entity: QaEntity): void {
   captured.setPointerCapture(event.pointerId)
   store.selectEntity(entity.instanceId)
   store.selectCell(entity.position)
-  moveMessage.value = ''
   animationFrame = requestAnimationFrame(updateHold)
 }
 
@@ -175,10 +172,9 @@ async function finishMove(point: GridPoint | null): Promise<void> {
   const target = point ? { ...point } : null
   const valid = validDrop(target)
   cancelMove()
-  if (!valid || !target) { moveMessage.value = '已取消移动：请选择地图内的空格。'; return }
+  if (!valid || !target) { store.showNotice('已取消移动：请选择地图内的空格。', 'info'); return }
   if (target.x === gesture.entity.position.x && target.y === gesture.entity.position.y) return
-  const result = await store.moveEntity(gesture.entity, target)
-  moveMessage.value = result.message
+  await store.moveEntity(gesture.entity, target)
 }
 
 function releasePointer(event: PointerEvent): void {
@@ -197,7 +193,6 @@ function targetSelected(): void {
   if (!entity?.moveTargetId || !movementAllowed.value) return
   moving.value = { entity: { ...entity, position: { ...entity.position } }, phase: 'targeting', pointerId: -1, x: 0, y: 0, originX: 0, originY: 0, startedAt: 0 }
   dropCell.value = { ...entity.position }
-  moveMessage.value = ''
 }
 
 function movementKey(event: KeyboardEvent): void {
@@ -221,9 +216,9 @@ async function placeEquipment(): Promise<void> {
   if (placementBusy.value || !selectedEquipment.value || !store.selectedCell) return
   placementBusy.value = true
   try {
-    placementMessage.value = await store.placeEquipment() ? '装备已放置到选定格。' : (store.lastOperationMessage || '选定格不可放置装备。')
+    await store.placeEquipment()
   } catch (error) {
-    placementMessage.value = error instanceof Error ? error.message : '装备放置失败，请刷新后重试。'
+    store.showNotice(error instanceof Error ? error.message : '装备放置失败，请刷新后重试。', 'error')
   } finally { placementBusy.value = false }
 }
 </script>
@@ -279,12 +274,11 @@ async function placeEquipment(): Promise<void> {
           <span class="block break-words">{{ selectedEquipment.name }}</span>
           <span class="utility-font mt-0.5 block break-all text-[10px] text-white/45" translate="no">{{ selectedEquipment.typeId }}</span>
         </div>
-        <button type="button" class="btn btn-primary btn-sm mt-2 w-full" :disabled="placementBusy || !store.selectedCell || !selectedEquipment" @click="placeEquipment">
+        <button type="button" class="btn btn-primary btn-sm mt-2 w-full" title="将选中装备放置到选中格" :disabled="placementBusy || !store.selectedCell || !selectedEquipment" @click="placeEquipment">
           <RefreshCw v-if="placementBusy" :size="14" class="shrink-0 animate-spin" aria-hidden="true" />
           <Box v-else :size="14" class="shrink-0" aria-hidden="true" />
           {{ placementBusy ? '放置中…' : `放置到 ${store.selectedCell ? `${store.selectedCell.x}, ${store.selectedCell.y}` : '未选格'}` }}
         </button>
-        <p class="m-0 mt-2 min-h-4 text-center text-[10px] text-[#d7ba63]" aria-live="polite">{{ placementMessage }}</p>
       </div>
     </aside>
 
@@ -300,7 +294,7 @@ async function placeEquipment(): Promise<void> {
           <button v-else type="button" class="btn btn-ghost btn-square btn-sm" :disabled="!movementAllowed || !store.selectedEntity?.moveTargetId || Boolean(moving)" aria-label="移动所选对象" :title="movementAllowed ? '移动所选对象' : movementReason" @click="targetSelected"><Move :size="16" aria-hidden="true" /></button>
         </div>
       </div>
-      <div v-if="moveMessage || store.movingTargetId || moving?.phase === 'targeting'" class="shrink-0 border-b border-white/10 px-4 py-2 text-[11px] text-secondary" role="status" aria-live="polite">{{ store.movingTargetId ? '正在同步游戏位置…' : moving?.phase === 'targeting' ? `${moving.entity.name} → ${dropCell?.x}, ${dropCell?.y}` : moveMessage }}</div>
+      <div v-if="store.movingTargetId || moving?.phase === 'targeting'" class="shrink-0 border-b border-white/10 px-4 py-2 text-[11px] text-secondary" role="status" aria-live="polite">{{ store.movingTargetId ? '正在同步游戏位置…' : `${moving?.entity.name} → ${dropCell?.x}, ${dropCell?.y}` }}</div>
 
       <div ref="gridViewport" class="flex min-h-0 flex-1 items-center justify-center overflow-auto p-5">
         <div class="relative shrink-0 border border-[#c6a451]/28 bg-[#7b5e36] p-2 shadow-[0_24px_80px_rgb(0_0_0/0.38)] cut-corner">

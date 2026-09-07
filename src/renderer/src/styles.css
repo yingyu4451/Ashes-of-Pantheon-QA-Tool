@@ -92,6 +92,7 @@ input[type="checkbox"] {
 }
 
 button:focus-visible,
+a:focus-visible,
 input:focus-visible,
 select:focus-visible,
 [tabindex]:focus-visible {
