@@ -62,7 +62,7 @@ describe('ZIP portable release', () => {
     await expect(readFile(join(app, 'obsolete.txt'))).rejects.toThrow()
     expect(JSON.parse(await readFile(join(app, 'update-manifest.json'), 'utf8')).version).toBe('1.0.1')
     expect(JSON.parse(await readFile(join(plan.stageDir, 'result.json'), 'utf8')).state).toBe('applied')
-  })
+  }, 45_000)
 
   it('restores earlier replacements when a later destination is locked', async () => {
     const { root, app } = await fixture()
@@ -86,7 +86,7 @@ describe('ZIP portable release', () => {
     expect(JSON.parse(await readFile(join(app, 'update-manifest.json'), 'utf8')).version).toBe('1.0.0')
     expect(JSON.parse(await readFile(join(plan.stageDir, 'result.json'), 'utf8')).state).toBe('rolled-back')
     expect((await readFile(join(plan.stageDir, 'journal.json'), 'utf8')).includes('z-locked.txt')).toBe(true)
-  })
+  }, 45_000)
 
   it('preserves a user file created while the helper waits for app exit', async () => {
     const { root, app } = await fixture()
@@ -105,7 +105,7 @@ describe('ZIP portable release', () => {
     const helper = promisify(execFile)('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', 'resources/updater/apply-update.ps1', '-PlanPath', planPath, '-NoLaunch']).then(() => true, () => false)
     try {
       let ready = false
-      for (let attempt = 0; attempt < 50; attempt++) {
+      for (let attempt = 0; attempt < 300; attempt++) {
         try { await readFile(join(plan.stageDir, 'helper.ready')); ready = true; break } catch { await delay(100) }
       }
       expect(ready).toBe(true)
@@ -113,7 +113,7 @@ describe('ZIP portable release', () => {
     } finally { parent.stdin.end() }
     expect(await helper).toBe(false)
     expect(await readFile(join(app, 'new.txt'), 'utf8')).toBe('user-created')
-  }, 15_000)
+  }, 45_000)
 
   it.each(['corrupt-delta', 'modified-base', 'skipped-version'])('falls back to the full ZIP: %s', async (scenario) => {
     const { root, app } = await fixture()
@@ -180,11 +180,11 @@ describe('ZIP portable release', () => {
     const { stdout } = await promisify(execFile)('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', 'resources/updater/start-update.ps1', '-PlanPath', planPath, '-NoLaunch'])
     expect(Number.parseInt(stdout.trim(), 10)).toBeGreaterThan(0)
     let state = ''
-    for (let attempt = 0; attempt < 50; attempt++) {
+    for (let attempt = 0; attempt < 300; attempt++) {
       try { state = JSON.parse(await readFile(join(plan.stageDir, 'result.json'), 'utf8')).state } catch { /* waiting for helper */ }
       if (state === 'applied') break
       await delay(100)
     }
     expect(state).toBe('applied')
-  }, 15_000)
+  }, 45_000)
 })

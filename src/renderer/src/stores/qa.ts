@@ -33,7 +33,7 @@ export const useQaStore = defineStore('qa', () => {
   const gameBuildPath = ref('')
   const updateStatus = ref<UpdateStatus>({
     phase: nativeMode ? 'idle' : 'disabled',
-    currentVersion: '0.1.5',
+    currentVersion: '0.1.6',
     message: nativeMode ? '尚未检查更新。' : '开发模式不检查更新。'
   })
   const runtimeReady = ref(!nativeMode)
