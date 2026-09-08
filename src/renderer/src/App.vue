@@ -15,6 +15,7 @@ import type { WorkspaceId } from '@shared/contracts'
 const store = useQaStore()
 const workspaceRoot = ref<HTMLElement | null>(null)
 const helpOpen = ref(false)
+const setupRefreshRevision = ref(0)
 
 const workspaceComponents: Record<WorkspaceId, Component> = {
   battle: BattleWorkspace,
@@ -26,6 +27,7 @@ const activeComponent = computed(() => workspaceComponents[store.activeWorkspace
 
 function selectWorkspace(workspace: WorkspaceId): void {
   store.activeWorkspace = workspace
+  if (workspace === 'setup') setupRefreshRevision.value++
   void store.refreshRuntime(false)
 }
 
@@ -68,7 +70,7 @@ onUnmounted(() => {
       />
 
       <main id="main-workspace" ref="workspaceRoot" class="min-h-0 flex-1" tabindex="-1">
-        <component :is="activeComponent" v-bind="store.activeWorkspace === 'battle' ? { interactionSuspended: helpOpen } : {}" />
+        <component :is="activeComponent" v-bind="store.activeWorkspace === 'battle' ? { interactionSuspended: helpOpen } : store.activeWorkspace === 'setup' ? { refreshRevision: setupRefreshRevision } : {}" />
       </main>
     </div>
     <GlobalNotice />

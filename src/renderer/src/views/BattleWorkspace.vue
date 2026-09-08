@@ -231,7 +231,7 @@ async function placeEquipment(): Promise<void> {
     <div>
       <Cable :size="28" class="mx-auto text-[#c6a451]/65" aria-hidden="true" />
       <h1 id="battle-empty-title" class="display-font m-0 mt-4 text-[24px] text-[#eee7dc]">未连接战斗实例</h1>
-      <p class="m-0 mt-2 text-[12px] text-white/38">连接 Unity Editor Play Mode 后载入战斗状态。</p>
+      <p class="m-0 mt-2 text-[12px] text-white/38">连接运行中的游戏或 Unity Editor，并进入战斗场景后载入战斗状态。</p>
       <button type="button" class="btn btn-primary btn-sm mt-5" @click="store.activeWorkspace = 'setup'">前往连接</button>
     </div>
   </section>

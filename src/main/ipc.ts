@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs'
-import { access, cp, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
+import { access, cp, lstat, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { join, normalize, relative, resolve } from 'node:path'
 import { app, dialog, ipcMain } from 'electron'
 import { createPackageBridgeManager } from './packageBridge.js'
@@ -66,25 +66,76 @@ async function inspectUnityProject(projectPath: string): Promise<UnityProjectIns
     const versionText = await readFile(join(root, 'ProjectSettings', 'ProjectVersion.txt'), 'utf8')
     const version = versionText.match(/m_EditorVersion:\s*(.+)/)?.[1]?.trim()
     const target = resolveBridgeTarget(root)
-    return {
-      path: root,
-      valid: true,
-      unityVersion: version,
-      bridgeInstalled: await exists(join(target, 'package.json')),
-      message: 'Unity 项目可用'
+    const inspection: UnityProjectInspection = { path: root, valid: true, unityVersion: version, bridgeInstalled: false, bridgeStatus: 'not-installed', message: 'Bridge 未安装。' }
+    try {
+      if ((await lstat(join(root, 'Packages'))).isSymbolicLink()) throw new Error('Packages 是链接目录，请使用实际项目目录。')
+      if (await exists(target)) {
+        if ((await lstat(target)).isSymbolicLink()) throw new Error('Bridge 是链接目录，无法安全检查或更新。')
+        try {
+          const installed = JSON.parse((await readFile(join(target, 'package.json'), 'utf8')).replace(/^\uFEFF/, '')) as { name?: string; version?: string }
+          if (installed.name !== bridgePackageName) throw new Error('Different package')
+          inspection.bridgeInstalled = true
+          inspection.installedBridgeVersion = typeof installed.version === 'string' ? installed.version : undefined
+        } catch {
+          return { ...inspection, bridgeStatus: 'conflict', message: 'Bridge 目录已存在，但无法确认包归属。请检查该目录，工具不会覆盖它。' }
+        }
+      }
+      const source = resolveBundledBridgePath()
+      try {
+        const bundled = JSON.parse((await readFile(join(source, 'package.json'), 'utf8')).replace(/^\uFEFF/, '')) as { name?: string; version?: string }
+        if (bundled.name !== bridgePackageName || !(await exists(join(source, 'Editor', 'QaBridgeServer.cs')))) throw new Error('Invalid bundled bridge')
+        inspection.bundledBridgeVersion = typeof bundled.version === 'string' ? bundled.version : undefined
+      } catch {
+        return { ...inspection, bridgeStatus: 'unavailable', message: '工具内置 Bridge 不完整，无法安装或比较版本。请重新解压完整工具 ZIP。' }
+      }
+      if (!inspection.bridgeInstalled) return inspection
+      const current = await bridgeFilesMatch(source, target)
+      return { ...inspection, bridgeStatus: current ? 'current' : 'outdated', message: current ? 'Bridge 已是当前工具内置版本。' : 'Bridge 文件与当前工具内置版本不一致，请更新。' }
+    } catch (error) {
+      return { ...inspection, bridgeStatus: 'error', message: error instanceof Error ? error.message : 'Bridge 状态检查失败，请重试。' }
     }
   } catch (error) {
     return {
       path: normalize(projectPath),
       valid: false,
       bridgeInstalled: false,
+      bridgeStatus: 'error',
       message: error instanceof Error ? error.message : '无法检查 Unity 项目。'
     }
   }
 }
 
+async function bridgeFilesMatch(source: string, target: string): Promise<boolean> {
+  let matches = true
+  for (const entry of await readdir(source, { withFileTypes: true })) {
+    if (entry.name.endsWith('.meta')) continue
+    const sourcePath = join(source, entry.name)
+    const targetPath = join(target, entry.name)
+    let targetInfo
+    try { targetInfo = await lstat(targetPath) }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') { matches = false; continue }
+      throw error
+    }
+    if (targetInfo.isSymbolicLink()) throw new Error('Bridge 包含链接文件，无法安全检查或更新。')
+    if (entry.isDirectory()) {
+      if (!targetInfo.isDirectory() || !await bridgeFilesMatch(sourcePath, targetPath)) matches = false
+    } else {
+      if (!targetInfo.isFile()) { matches = false; continue }
+      const [expected, actual] = await Promise.all([readFile(sourcePath), readFile(targetPath)])
+      // Git checkout line endings and Unity-generated metadata do not change bridge behavior.
+      const normalizeText = (bytes: Buffer): string => bytes.toString('utf8').replace(/^\uFEFF/, '').replace(/\r\n/g, '\n')
+      if (/\.(cs|json|asmdef|md)$/.test(entry.name) ? normalizeText(expected) !== normalizeText(actual) : !expected.equals(actual)) matches = false
+    }
+  }
+  return matches
+}
+
 async function installEditorBridge(projectPath: string): Promise<OperationResult> {
   try {
+    const inspection = await inspectUnityProject(projectPath)
+    if (!inspection.valid || !['not-installed', 'outdated', 'current'].includes(inspection.bridgeStatus ?? 'error')) throw new Error(inspection.message)
+    if (inspection.bridgeStatus === 'current') return { ok: true, message: 'Editor Bridge 已是当前工具内置版本，无需重复安装。' }
     const root = await assertUnityProject(projectPath)
     const source = resolveBundledBridgePath()
     const target = resolveBridgeTarget(root)
@@ -112,7 +163,7 @@ async function uninstallEditorBridge(projectPath: string): Promise<OperationResu
     const target = resolveBridgeTarget(root)
     const manifestPath = join(target, 'package.json')
     if (!(await exists(manifestPath))) return { ok: true, message: 'Bridge 未安装。' }
-    const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as { name?: string }
+    const manifest = JSON.parse((await readFile(manifestPath, 'utf8')).replace(/^\uFEFF/, '')) as { name?: string }
     if (manifest.name !== bridgePackageName) throw new Error('目标目录不是 Ashes of Pantheon QA Bridge，已取消卸载。')
     await rm(target, { recursive: true, force: false })
     return { ok: true, message: 'Editor Bridge 已卸载。' }

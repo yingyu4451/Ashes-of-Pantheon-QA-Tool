@@ -1,15 +1,24 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { Cable, Download, FolderOpen, PackageCheck, Play, RefreshCw, Trash2 } from '@lucide/vue'
 import { useQaStore } from '@/stores/qa'
 import type { BridgeInstance, GameBuildInspection, PackageBridgeInspection, UnityProjectInspection, UpdatePhase } from '@shared/contracts'
 
+const props = defineProps<{ refreshRevision?: number }>()
 const store = useQaStore()
 const projectInspection = ref<UnityProjectInspection | null>(null)
 const buildInspection = ref<GameBuildInspection | null>(null)
 const packageBridgeInspection = ref<PackageBridgeInspection | null>(null)
 const instances = ref<BridgeInstance[]>([])
 const busy = ref(false)
+const checkingProject = ref(false)
+const selectingProject = ref(false)
+const projectError = ref('')
+let projectInspectionRevision = 0
+let disposed = false
+const canInstallBridge = computed(() => !busy.value && !checkingProject.value && !selectingProject.value && projectInspection.value?.valid && ['not-installed', 'outdated'].includes(projectInspection.value.bridgeStatus ?? ''))
+const canUninstallBridge = computed(() => !busy.value && !checkingProject.value && !selectingProject.value && projectInspection.value?.valid && projectInspection.value.bridgeInstalled)
+const bridgeLabels = { 'not-installed': '未安装', current: '已是最新', outdated: '需要更新', conflict: '目录冲突', unavailable: '内置包不可用', error: '检查失败' }
 const connectingInstanceId = ref('')
 const refreshingInstances = ref(false)
 const packageBridgeBusy = ref(false)
@@ -27,29 +36,56 @@ const updatePhaseLabels: Record<UpdatePhase, string> = {
   error: '更新失败'
 }
 
+async function inspectProject(path: string): Promise<UnityProjectInspection | null> {
+  const revision = ++projectInspectionRevision
+  projectInspection.value = null
+  projectError.value = ''
+  checkingProject.value = Boolean(path && window.qaNative)
+  if (!path || !window.qaNative) return null
+  try {
+    const inspection = await window.qaNative.inspectUnityProject(path)
+    if (revision !== projectInspectionRevision || disposed) return null
+    projectInspection.value = inspection
+    return inspection
+  } catch (error) {
+    if (revision === projectInspectionRevision && !disposed) projectError.value = error instanceof Error ? error.message : 'Bridge 状态检查失败，请重试。'
+    return null
+  } finally {
+    if (revision === projectInspectionRevision && !disposed) checkingProject.value = false
+  }
+}
+
+function refreshProjectInspection(): void {
+  if (!busy.value && !selectingProject.value && !checkingProject.value) void inspectProject(store.unityProjectPath)
+}
+
 async function selectUnityProject(): Promise<void> {
+  if (busy.value || selectingProject.value) return
   if (!window.qaNative) {
     store.showNotice('目录选择仅在 Electron 应用中可用。', 'info')
     return
   }
-  const path = await window.qaNative.selectDirectory('选择 Ashes of Pantheon Unity 项目')
-  if (!path) return
-  projectInspection.value = await window.qaNative.inspectUnityProject(path)
-  if (projectInspection.value.valid) {
-    const saved = await store.rememberPaths({ unityProjectPath: projectInspection.value.path })
-    store.showNotice(saved.ok ? 'Unity 项目路径已保存。' : saved.message, saved.ok ? 'success' : 'error')
-  } else {
-    store.showNotice(projectInspection.value.message, 'error')
-  }
+  selectingProject.value = true
+  try {
+    const path = await window.qaNative.selectDirectory('选择 Ashes of Pantheon Unity 项目')
+    if (!path || disposed) return
+    const inspection = await inspectProject(path)
+    if (inspection?.valid) {
+      const saved = await store.rememberPaths({ unityProjectPath: inspection.path })
+      store.showNotice(saved.ok ? 'Unity 项目路径已保存。' : saved.message, saved.ok ? 'success' : 'error')
+    } else if (inspection) store.showNotice(inspection.message, 'error')
+  } catch (error) {
+    store.showNotice(error instanceof Error ? error.message : '选择 Unity 项目失败，请重试。', 'error')
+  } finally { selectingProject.value = false }
 }
 
 async function installBridge(): Promise<void> {
-  if (!window.qaNative || !store.unityProjectPath) return
+  if (!window.qaNative || !store.unityProjectPath || !canInstallBridge.value) return
   busy.value = true
   try {
     const result = await window.qaNative.installEditorBridge(store.unityProjectPath)
     store.showNotice(result.message, result.ok ? 'success' : 'error')
-    projectInspection.value = await window.qaNative.inspectUnityProject(store.unityProjectPath)
+    await inspectProject(store.unityProjectPath)
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Bridge 安装或更新失败。请重新选择 Unity 项目后重试。'
     store.showNotice(message, 'error')
@@ -59,13 +95,13 @@ async function installBridge(): Promise<void> {
 }
 
 async function uninstallBridge(): Promise<void> {
-  if (!window.qaNative || !store.unityProjectPath) return
+  if (!window.qaNative || !store.unityProjectPath || !canUninstallBridge.value) return
   if (!window.confirm('从所选 Unity 项目卸载 Editor Bridge？')) return
   busy.value = true
   try {
     const result = await window.qaNative.uninstallEditorBridge(store.unityProjectPath)
     store.showNotice(result.message, result.ok ? 'success' : 'error')
-    projectInspection.value = await window.qaNative.inspectUnityProject(store.unityProjectPath)
+    await inspectProject(store.unityProjectPath)
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Bridge 卸载失败。请关闭 Unity 后重试。'
     store.showNotice(message, 'error')
@@ -163,13 +199,13 @@ async function connect(instance: BridgeInstance): Promise<void> {
 }
 
 onMounted(() => {
+  window.addEventListener('focus', refreshProjectInspection)
   void refreshInstances()
   instanceRefreshTimer = setInterval(() => void refreshInstances(), 2000)
 })
 
-watch(() => store.unityProjectPath, async (path) => {
-  projectInspection.value = path && window.qaNative ? await window.qaNative.inspectUnityProject(path) : null
-}, { immediate: true })
+watch(() => store.unityProjectPath, (path) => { void inspectProject(path) }, { immediate: true })
+watch(() => props.refreshRevision, refreshProjectInspection)
 
 watch(() => store.gameBuildPath, async (path) => {
   const revision = ++buildInspectionRevision
@@ -188,6 +224,9 @@ watch(() => store.gameBuildPath, async (path) => {
 }, { immediate: true })
 
 onUnmounted(() => {
+  disposed = true
+  projectInspectionRevision++
+  window.removeEventListener('focus', refreshProjectInspection)
   if (instanceRefreshTimer) clearInterval(instanceRefreshTimer)
 })
 </script>
@@ -208,22 +247,34 @@ onUnmounted(() => {
         <div class="space-y-3">
           <div class="flex min-w-0 gap-2">
             <input class="input input-sm min-w-0 flex-1 px-3 utility-font text-[11px]" :value="store.unityProjectPath" name="unity-project-path" autocomplete="off" readonly placeholder="未选择 Unity 项目…" aria-label="Unity 项目路径" />
-            <button type="button" class="btn btn-neutral btn-sm shrink-0" title="选择 Unity 项目根目录" @click="selectUnityProject"><FolderOpen :size="15" aria-hidden="true" />选择项目</button>
+            <button type="button" class="btn btn-neutral btn-sm shrink-0" title="选择 Unity 项目根目录" :disabled="busy || selectingProject" @click="selectUnityProject"><FolderOpen :size="15" aria-hidden="true" />选择项目</button>
           </div>
 
-          <div v-if="projectInspection" class="flex flex-wrap items-center gap-x-5 gap-y-2 border border-white/10 bg-white/[0.025] px-3 py-2 text-[11px]">
-            <span :class="projectInspection.valid ? 'text-[#67b49e]' : 'text-[#dd6958]'">{{ projectInspection.message }}</span>
-            <span v-if="projectInspection.unityVersion" class="utility-font text-white/36">Unity {{ projectInspection.unityVersion }}</span>
-            <span class="ml-auto text-white/42">{{ projectInspection.bridgeInstalled ? 'Bridge 已安装' : 'Bridge 未安装' }}</span>
+          <div class="flex min-h-[68px] flex-col justify-center gap-1 border border-white/10 bg-white/[0.025] px-3 py-2 text-[11px]" role="status" aria-live="polite" :aria-busy="checkingProject">
+            <p v-if="checkingProject" class="m-0 text-white/60">正在检查 Editor Bridge…</p>
+            <p v-else-if="projectError" class="m-0 break-words text-error">{{ projectError }}</p>
+            <template v-else-if="projectInspection">
+              <p class="m-0 break-words" :class="projectInspection.bridgeStatus === 'current' ? 'text-success' : ['not-installed', 'outdated'].includes(projectInspection.bridgeStatus ?? '') ? 'text-warning' : 'text-error'">{{ projectInspection.message }}</p>
+              <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-white/50">
+                <span v-if="projectInspection.unityVersion" class="utility-font">Unity {{ projectInspection.unityVersion }}</span>
+                <span v-if="projectInspection.installedBridgeVersion">已安装 <span translate="no">v{{ projectInspection.installedBridgeVersion }}</span></span>
+                <span v-if="projectInspection.bundledBridgeVersion">工具内置 <span translate="no">v{{ projectInspection.bundledBridgeVersion }}</span></span>
+                <span class="ml-auto">{{ projectInspection.bridgeStatus ? bridgeLabels[projectInspection.bridgeStatus] : '状态未知，请重新检查' }}</span>
+              </div>
+            </template>
+            <p v-else class="m-0 text-white/45">选择 Unity 项目后检查 Bridge 状态。</p>
           </div>
 
-          <div class="flex gap-2">
-            <button type="button" class="btn btn-primary btn-sm" title="安装或更新 Editor Bridge" :disabled="busy || !projectInspection?.valid" @click="installBridge">
-              <RefreshCw v-if="busy" :size="15" class="animate-spin" aria-hidden="true" />
+          <div class="flex flex-wrap gap-2">
+            <button type="button" class="btn btn-primary btn-sm w-[176px] shrink-0" title="与当前工具内置 Bridge 比较，存在差异时可更新" :disabled="!canInstallBridge" @click="installBridge">
+              <RefreshCw v-if="busy || checkingProject" :size="15" class="animate-spin motion-reduce:animate-none" aria-hidden="true" />
               <PackageCheck v-else :size="15" aria-hidden="true" />
-              {{ busy ? '处理中…' : projectInspection?.bridgeInstalled ? '更新 Bridge' : '安装 Bridge' }}
+              {{ busy ? '处理中…' : checkingProject ? '检查中…' : projectInspection?.bridgeStatus === 'current' ? 'Bridge 已是最新' : projectInspection?.bridgeInstalled ? '更新 Bridge' : '安装 Bridge' }}
             </button>
-            <button type="button" class="btn btn-neutral btn-sm" :disabled="busy || !projectInspection?.bridgeInstalled" @click="uninstallBridge"><Trash2 :size="14" aria-hidden="true" />卸载 Bridge</button>
+            <button type="button" class="btn btn-neutral btn-sm" :disabled="!canUninstallBridge" @click="uninstallBridge"><Trash2 :size="14" aria-hidden="true" />卸载 Bridge</button>
+            <button type="button" class="btn btn-neutral btn-sm w-[192px] shrink-0" :disabled="busy || selectingProject || checkingProject || !store.unityProjectPath" title="重新读取项目中的 Bridge 文件并比较内置版本" @click="refreshProjectInspection">
+              <RefreshCw :size="14" :class="checkingProject ? 'animate-spin motion-reduce:animate-none' : ''" aria-hidden="true" />{{ checkingProject ? '检查 Bridge 状态…' : '检查 Bridge 状态' }}
+            </button>
           </div>
         </div>
       </section>

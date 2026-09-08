@@ -1,11 +1,5 @@
 # Ashes of Pantheon QA Tool 使用说明
 
-## 首次启动
-
-下载正式 Release 中的 `win-x64.zip`，完整解压到可写目录，运行其中的 `Ashes of Pantheon QA Tool.exe`。不要在压缩包预览窗口直接运行，也不要只复制 EXE。软件无需安装，桌面窗口最小为 1100 × 720。
-
-顶部问号在应用内打开此说明弹窗，无需网络，也不会打开 GitHub。点击关闭按钮、按 Esc 或点击遮罩可关闭；ZIP 根目录的 `USAGE.md` 也可离线查阅。网页开发预览不提供目录选择和真实游戏连接。
-
 ## 连接 Unity Editor
 
 1. 打开“连接”，点击“选择项目”，选择包含 `Assets`、`Packages` 和 `ProjectSettings` 的 Unity 项目根目录。
@@ -14,6 +8,8 @@
 4. 未进入 Play Mode 时可浏览目录；进入 Play Mode 并加载战斗后，才能读取和编辑战斗状态。
 
 所选路径自动保存。Editor Bridge 仅用于编辑器，不会进入 Player 构建。升级工具若包含 Bridge 改动，需再次点击“更新 Bridge”；只更新工具不会自动替换已安装的 Bridge。
+
+选择项目、点击“连接”选项卡或窗口重新获得焦点时，工具会检查 Editor Bridge；也可点击“检查 Bridge 状态”。未安装时可安装，内置文件有差异或缺失时可更新，已与当前工具内置版本一致时按钮禁用。检测不会自动安装；版本号相同但文件内容不同时仍会提示更新，Unity 生成的 `.meta` 和文本换行差异不影响判断。
 
 ## 连接打包游戏
 

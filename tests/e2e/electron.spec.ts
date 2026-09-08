@@ -59,6 +59,7 @@ test('native preload exposes directory selection and hides demo catalog', async 
 
     await page.getByRole('button', { name: '战斗' }).click()
     await expect(page.getByRole('heading', { name: '未连接战斗实例' })).toBeVisible()
+    await expect(page.getByText('连接运行中的游戏或 Unity Editor，并进入战斗场景后载入战斗状态。', { exact: true })).toBeVisible()
     await expect(page.getByText('67/80')).toHaveCount(0)
 
     await expect(page.getByRole('navigation', { name: '主导航' }).getByRole('button', { name: '玩家', exact: true })).toHaveCount(0)
@@ -92,16 +93,45 @@ test('editor bridge installs from bundled resources', async () => {
 
     const manifest = JSON.parse(await readFile(join(projectRoot, 'Packages', 'com.ashes-of-pantheon.qa-bridge', 'package.json'), 'utf8')) as { name: string }
     expect(manifest.name).toBe('com.ashes-of-pantheon.qa-bridge')
+    await expect(page.evaluate((path) => window.qaNative!.inspectUnityProject(path), projectRoot)).resolves.toMatchObject({
+      valid: true, bridgeInstalled: true, bridgeStatus: 'current'
+    })
 
     await page.evaluate(() => window.qaNative!.writeCatalogCache({ cards: [], equipment: [], buffs: [], blessings: [], intents: [] }))
+    const repeatedInstall = await page.evaluate((path) => window.qaNative!.installEditorBridge(path), projectRoot)
+    expect(repeatedInstall).toEqual({ ok: true, message: 'Editor Bridge 已是当前工具内置版本，无需重复安装。' })
+    await expect(page.evaluate(() => window.qaNative!.readCatalogCache())).resolves.not.toBeNull()
+
+    const adapterPath = join(projectRoot, 'Packages', 'com.ashes-of-pantheon.qa-bridge', 'Editor', 'QaGameReflectionAdapter.cs')
+    await writeFile(adapterPath, '// outdated bridge with unchanged package version\n', 'utf8')
+    await expect(page.evaluate((path) => window.qaNative!.inspectUnityProject(path), projectRoot)).resolves.toMatchObject({
+      valid: true, bridgeInstalled: true, bridgeStatus: 'outdated'
+    })
 
     const updateResult = await page.evaluate((path) => window.qaNative!.installEditorBridge(path), projectRoot)
     expect(updateResult).toEqual({ ok: true, message: 'Editor Bridge 已更新。重新聚焦 Unity，等待脚本编译完成。' })
     await expect(page.evaluate(() => window.qaNative!.readCatalogCache())).resolves.toBeNull()
+    await expect(page.evaluate((path) => window.qaNative!.inspectUnityProject(path), projectRoot)).resolves.toMatchObject({ bridgeStatus: 'current' })
+
+    await rm(adapterPath)
+    await expect(page.evaluate((path) => window.qaNative!.inspectUnityProject(path), projectRoot)).resolves.toMatchObject({ bridgeStatus: 'outdated' })
+    await page.evaluate((path) => window.qaNative!.installEditorBridge(path), projectRoot)
+    await writeFile(`${adapterPath}.meta`, 'Unity-generated metadata', 'utf8')
+    const adapter = await readFile(adapterPath, 'utf8')
+    await writeFile(adapterPath, '\uFEFF' + adapter.replace(/\r?\n/g, '\r\n'), 'utf8')
+    const installedPackagePath = join(projectRoot, 'Packages', 'com.ashes-of-pantheon.qa-bridge', 'package.json')
+    await writeFile(installedPackagePath, '\uFEFF' + await readFile(installedPackagePath, 'utf8'), 'utf8')
+    await expect(page.evaluate((path) => window.qaNative!.inspectUnityProject(path), projectRoot)).resolves.toMatchObject({ bridgeStatus: 'current' })
 
     const uninstallResult = await page.evaluate((path) => window.qaNative!.uninstallEditorBridge(path), projectRoot)
     expect(uninstallResult.ok).toBe(true)
     await expect(access(join(projectRoot, 'Packages', 'com.ashes-of-pantheon.qa-bridge'))).rejects.toThrow()
+    await expect(page.evaluate((path) => window.qaNative!.inspectUnityProject(path), projectRoot)).resolves.toMatchObject({ bridgeInstalled: false, bridgeStatus: 'not-installed' })
+    await mkdir(join(projectRoot, 'Packages', 'com.ashes-of-pantheon.qa-bridge'))
+    await writeFile(installedPackagePath, JSON.stringify({ name: 'com.example.unrelated', version: '1.0.0' }))
+    await expect(page.evaluate((path) => window.qaNative!.inspectUnityProject(path), projectRoot)).resolves.toMatchObject({ valid: true, bridgeInstalled: false, bridgeStatus: 'conflict' })
+    await expect(page.evaluate((path) => window.qaNative!.installEditorBridge(path), projectRoot)).resolves.toMatchObject({ ok: false })
+    expect(JSON.parse(await readFile(installedPackagePath, 'utf8')).name).toBe('com.example.unrelated')
   } finally {
     await app.close()
     if (projectRoot.startsWith(join(tmpdir(), 'ashes-qa-unity-'))) {

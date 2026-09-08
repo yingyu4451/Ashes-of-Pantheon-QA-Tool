@@ -107,6 +107,9 @@ export interface UnityProjectInspection {
   valid: boolean
   unityVersion?: string
   bridgeInstalled: boolean
+  bridgeStatus?: 'not-installed' | 'current' | 'outdated' | 'conflict' | 'unavailable' | 'error'
+  installedBridgeVersion?: string
+  bundledBridgeVersion?: string
   message: string
 }
 
