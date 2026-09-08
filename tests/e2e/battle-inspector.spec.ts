@@ -3,24 +3,27 @@ import type { BridgeRequest, OperationResult, QaBattleSnapshot, QaCatalog } from
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
-    const controls = { failBlessing: false, delayBlessing: false, failPlacement: false, empty: false, longNames: false, finish: () => undefined as void }
+    const controls = { failBlessing: false, delayBlessing: false, failPlacement: false, empty: false, longNames: false, finish: () => undefined as void, requests: [] as BridgeRequest[] }
     Object.assign(window, { inspectorTest: controls })
     const instance = { instanceId: 'inspector-test', kind: 'editor', processId: 4567, displayName: 'Unity Inspector Test', gameVersion: '1.0', sceneName: 'Battle', port: 12345, lastSeenAt: new Date().toISOString() }
     const catalog: QaCatalog = {
       cards: [{ typeId: 'Card01', name: '测试手牌', description: '造成伤害。', category: 'effect', cost: 2, rarity: 'common', tags: [] }],
-      equipment: [{ typeId: 'Equipment01', name: '测试长剑' }, { typeId: 'Equipment02', name: '测试圆盾' }], buffs: [],
+      equipment: [{ typeId: 'Equipment01', name: '测试长剑' }, { typeId: 'Equipment02', name: '测试圆盾' }],
+      buffs: [{ typeId: 'Buff01', name: '力量增幅', description: '提高攻击。', supportsStacks: true, supportsDuration: false }],
       blessings: [{ typeId: 'Blessing01', name: '试炼祝福', description: '提高生命上限。' }],
       intents: [{ typeId: 'Attack01', name: '普通攻击', description: '', parameters: [] }]
     }
     const battle: QaBattleSnapshot = {
       available: true, sceneName: 'Battle', mapName: 'TestMap', width: 7, height: 7, turn: 1, phase: '玩家行动',
-      player: { instanceId: 'player-main', name: '主角', position: { x: 0, y: 0 }, currentHp: 50, maxHp: 80, currentCost: 2, maxCost: 4, blessings: [], buffs: [] },
-      entities: [{ instanceId: 'enemy-01#0', typeId: 'Enemy01', name: '测试怪物', kind: 'enemy', position: { x: 1, y: 1 }, currentHp: 30, maxHp: 30, buffs: [], intents: [] }]
+      player: { instanceId: 'player-main', name: '主角', position: { x: 0, y: 0 }, currentHp: 50, maxHp: 80, currentCost: 2, maxCost: 4, shield: 6, baseAttack: 7, attack: 11, gold: 120, blessings: [], buffs: [] },
+      entities: [{ instanceId: 'enemy-01#0', typeId: 'Enemy01', name: '测试怪物', kind: 'enemy', position: { x: 1, y: 1 }, currentHp: 30, maxHp: 30, baseAttack: 8, attack: 12, buffs: [{ instanceId: 'buff-0', typeId: 'Buff01', name: '力量增幅', stacks: 2, description: '提高攻击。' }], intents: [{ instanceId: 'intent-0', typeId: 'Attack01', name: '普通攻击', summary: '攻击主角。', parameters: { enabled: true, signal: 'DashStart', damage: 6 }, groupIndex: 0 }] }],
+      routePreview: { startPosition: { x: 0, y: 0 }, steps: [{ x: 0, y: 1 }, { x: -1, y: 1 }], hasLoop: false, hasTerminalPosition: true, terminalPosition: { x: -1, y: 1 }, stopReason: 'MovementExhausted' }
     }
     window.qaNative = {
       listBridgeInstances: async () => [instance],
       connectBridge: async () => ({ ok: true, message: '已连接。', data: instance }),
       requestBridge: async <T>(request: BridgeRequest): Promise<OperationResult<T>> => {
+        controls.requests.push(structuredClone(request))
         if (request.path === '/api/catalog') {
           const snapshot = structuredClone(catalog)
           if (controls.empty) { snapshot.blessings = []; snapshot.equipment = [] }
@@ -30,6 +33,7 @@ test.beforeEach(async ({ page }) => {
           }
           return { ok: true, message: '', data: snapshot as T }
         }
+        if (request.path === '/api/battle/route-preview') return { ok: true, message: '', data: structuredClone(battle.routePreview) as T }
         if (request.path === '/api/battle') return { ok: true, message: '', data: structuredClone(battle) as T }
         if (request.path === '/api/cards') return { ok: true, message: '', data: { available: true, cards: [{ typeId: 'Card01', count: 3 }] } as T }
         if (request.path === '/api/blessings') {
@@ -40,11 +44,26 @@ test.beforeEach(async ({ page }) => {
           else battle.player.blessings = battle.player.blessings.filter((item) => item.typeId !== typeId)
         }
         if (request.path === '/api/player') Object.assign(battle.player, request.body)
+        if (request.path === '/api/equipment') {
+          const moveTargetId = (request.body as { moveTargetId: string }).moveTargetId
+          battle.entities = battle.entities.filter((entity) => entity.moveTargetId !== moveTargetId)
+        }
+        if (request.path === '/api/buffs' && request.method === 'PATCH') {
+          const body = request.body as { targetInstanceId: string; instanceId: string; stacks: number }
+          const target = battle.entities.find((entity) => entity.instanceId === body.targetInstanceId)
+          const buff = target?.buffs.find((item) => item.instanceId === body.instanceId)
+          if (buff) buff.stacks = body.stacks
+        }
+        if (request.path === '/api/intents') {
+          const body = request.body as { instanceId: string; steps: Array<{ typeId: string; groupIndex: number }> }
+          const target = battle.entities.find((entity) => entity.instanceId === body.instanceId)
+          if (target) target.intents = body.steps.map((step, index) => ({ instanceId: `intent-${index}`, typeId: step.typeId, name: step.typeId === 'Attack01' ? '普通攻击' : step.typeId, summary: '', parameters: {}, groupIndex: step.groupIndex }))
+        }
         if (request.path === '/api/gm') {
           if (controls.failPlacement) return { ok: false, message: '格子被占用。' }
           const [, typeId, x, y] = (request.body as { command: string }).command.split(' ')
           if (typeId !== 'Equipment01') throw new Error('Unexpected equipment TypeId')
-          battle.entities.push({ instanceId: `equipment#${battle.entities.length}`, typeId, name: '测试长剑', kind: 'equipment', position: { x: Number(x), y: Number(y) }, buffs: [] })
+          battle.entities.push({ instanceId: `equipment#${battle.entities.length}`, moveTargetId: `equipment-${battle.entities.length}`, typeId, name: '测试长剑', kind: 'equipment', position: { x: Number(x), y: Number(y) }, buffs: [] })
         }
         return { ok: true, message: '修改已同步。', data: { success: true, message: '修改已同步。' } as T }
       },
@@ -86,6 +105,65 @@ test('player properties and blessings are separate battle tabs, with no player i
   await expect(inspector.getByRole('tab', { name: '祝福', exact: true })).toHaveCount(0)
   await expect(inspector.getByRole('tab', { name: '属性', exact: true })).toHaveAttribute('aria-selected', 'true')
   await expect(inspector.getByRole('tab', { name: '意图', exact: true })).toBeVisible()
+})
+
+test('player base values, effective attack and BUFF stacks use the runtime mutation routes', async ({ page }) => {
+  await page.getByRole('button', { name: '选择 主角', exact: true }).click()
+  const inspector = page.getByRole('complementary', { name: '对象检查器' })
+  await expect(inspector.getByText('11', { exact: true })).toBeVisible()
+  await inspector.getByLabel('护盾', { exact: true }).fill('9')
+  await inspector.getByLabel('基础攻击', { exact: true }).fill('10')
+  await inspector.getByLabel('金币', { exact: true }).fill('345')
+  await inspector.getByRole('button', { name: '应用属性', exact: true }).click()
+  const playerBody = await page.evaluate(() => {
+    const requests = (window as unknown as { inspectorTest: { requests: BridgeRequest[] } }).inspectorTest.requests
+    return requests.slice().reverse().find((request) => request.path === '/api/player')?.body
+  })
+  expect(playerBody).toMatchObject({ shield: 9, baseAttack: 10, gold: 345 })
+  expect(playerBody).not.toMatchObject({ baseAttack: 11 })
+
+  await page.getByRole('button', { name: '选择 测试怪物', exact: true }).click()
+  await inspector.getByRole('tab', { name: 'BUFF', exact: true }).click()
+  const stacks = inspector.locator('input[name="buff-buff-0-stacks"]')
+  await stacks.fill('4')
+  await inspector.getByRole('button', { name: '保存 力量增幅 层数', exact: true }).click()
+  const buffRequest = await page.evaluate(() => {
+    const requests = (window as unknown as { inspectorTest: { requests: BridgeRequest[] } }).inspectorTest.requests
+    return requests.slice().reverse().find((request) => request.path === '/api/buffs' && request.method === 'PATCH')
+  })
+  expect(buffRequest?.body).toEqual({ targetInstanceId: 'enemy-01#0', instanceId: 'buff-0', typeId: 'Buff01', stacks: 4 })
+  await expect(stacks).toHaveValue('4')
+})
+
+test('intent drafts survive automatic refresh and retain registered TypeIds', async ({ page }) => {
+  await page.getByRole('button', { name: '选择 测试怪物', exact: true }).click()
+  const inspector = page.getByRole('complementary', { name: '对象检查器' })
+  await inspector.getByRole('tab', { name: '意图', exact: true }).click()
+  await expect(inspector.getByText('Attack01', { exact: true })).toBeVisible()
+  const enabled = inspector.locator('input[name="intent-intent-0-enabled"]')
+  const signal = inspector.locator('input[name="intent-intent-0-signal"]')
+  const damage = inspector.locator('input[name="intent-intent-0-damage"]')
+  await expect(enabled).toHaveAttribute('type', 'checkbox')
+  await expect(enabled).toBeChecked()
+  await expect(signal).toHaveAttribute('type', 'text')
+  await expect(signal).toHaveValue('DashStart')
+  await expect(damage).toHaveAttribute('type', 'number')
+  await enabled.uncheck()
+  await signal.fill('DashReady')
+  await damage.fill('9')
+  await inspector.getByRole('button', { name: '添加意图', exact: true }).click()
+  await expect(inspector.getByText('Attack01', { exact: true })).toHaveCount(2)
+  await page.getByRole('button', { name: '刷新运行时状态', exact: true }).click()
+  await expect(inspector.getByText('Attack01', { exact: true })).toHaveCount(2)
+  await inspector.getByRole('button', { name: '应用序列', exact: true }).click()
+  const intentBody = await page.evaluate(() => {
+    const requests = (window as unknown as { inspectorTest: { requests: BridgeRequest[] } }).inspectorTest.requests
+    return requests.slice().reverse().find((request) => request.path === '/api/intents')?.body
+  }) as { steps: Array<{ typeId: string; groupIndex: number }> }
+  expect(intentBody.steps).toEqual([
+    expect.objectContaining({ typeId: 'Attack01', groupIndex: 0, parameters: { enabled: false, signal: 'DashReady', damage: 9 } }),
+    expect.objectContaining({ typeId: 'Attack01', groupIndex: 1 })
+  ])
 })
 
 test('blessing errors do not fabricate owned state, and pending or empty choices are disabled', async ({ page }) => {
@@ -223,6 +301,24 @@ test('placed equipment appears in both the object list and battle map after refr
   await page.getByRole('button', { name: '选择格 -1, 1', exact: true }).click()
   await page.getByRole('button', { name: '放置到 -1, 1', exact: true }).click()
   await expect(equipment).toHaveCount(1)
+  page.once('dialog', (dialog) => void dialog.accept())
+  await page.getByRole('complementary', { name: '场上对象' }).getByRole('button', { name: '删除 测试长剑', exact: true }).click()
+  await expect(equipment).toHaveCount(0)
+  const deleteRequest = await page.evaluate(() => {
+    const requests = (window as unknown as { inspectorTest: { requests: BridgeRequest[] } }).inspectorTest.requests
+    return requests.slice().reverse().find((request) => request.path === '/api/equipment')
+  })
+  expect(deleteRequest).toMatchObject({ method: 'DELETE', body: { moveTargetId: 'equipment-1' } })
+})
+
+test('battle map displays the game-provided predicted route and destination', async ({ page }) => {
+  await expect(page.getByTestId('route-preview')).toBeVisible()
+  await expect(page.getByTestId('route-summary')).toHaveText('预计路线 2 格 · 预计终点 -1, 1 · 移动力耗尽')
+  const overlay = page.getByTestId('route-preview')
+  await expect(overlay.locator('path[marker-end]')).toHaveAttribute('d', /M .+ L .+ L/)
+  await expect(overlay.locator('circle')).toHaveCount(2)
+  const requestedRoute = await page.evaluate(() => (window as unknown as { inspectorTest: { requests: BridgeRequest[] } }).inspectorTest.requests.some((request) => request.path === '/api/battle/route-preview'))
+  expect(requestedRoute).toBe(true)
 })
 
 test('battle properties remain reachable at supported desktop sizes', async ({ page }) => {
@@ -250,6 +346,8 @@ test('battle properties remain reachable at supported desktop sizes', async ({ p
 test('card actions are discoverable and the owned badge differs from cost', async ({ page }) => {
   await page.getByRole('button', { name: '卡牌', exact: true }).click()
   await expect(page.getByText('CARD REGISTRY', { exact: true })).toHaveCount(0)
+  await page.getByRole('checkbox', { name: '已持有', exact: true }).check()
+  await expect(page.getByRole('checkbox', { name: '已持有', exact: true })).toBeChecked()
   const card = page.getByRole('button', { name: /测试手牌/ })
   await card.hover()
   await expect(page.getByRole('tooltip')).toContainText('左键获得 1 张，右键删除 1 张')

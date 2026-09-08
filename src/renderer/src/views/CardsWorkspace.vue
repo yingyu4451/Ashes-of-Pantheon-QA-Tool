@@ -100,6 +100,14 @@ const rarities: Array<{ value: Rarity; label: string }> = [
       </fieldset>
 
       <fieldset class="flex flex-wrap items-center gap-2">
+        <legend class="float-left mr-2 text-[11px] font-bold text-white/42">持有状态</legend>
+        <label class="flex h-7 items-center gap-1.5 border border-white/10 px-2 text-[11px] text-white/58 has-[:checked]:border-[#55a58d]/70 has-[:checked]:bg-[#55a58d]/12 has-[:checked]:text-[#8ed9c3] has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-40">
+          <input v-model="store.selectedOwnedOnly" class="checkbox checkbox-xs checkbox-success" type="checkbox" name="card-owned" :disabled="!store.cardInventoryAvailable" />
+          已持有
+        </label>
+      </fieldset>
+
+      <fieldset class="flex flex-wrap items-center gap-2">
         <legend class="float-left mr-2 text-[11px] font-bold text-white/42">费用</legend>
         <label v-for="cost in [0, 1, 2, 3, 4, 5]" :key="cost" class="grid h-7 w-7 cursor-pointer place-items-center border border-white/10 text-[11px] text-white/58 has-[:checked]:border-[#c6a451]/48 has-[:checked]:bg-[#c6a451]/9 has-[:checked]:text-[#edcf70]">
           <input v-model="store.selectedCosts" class="sr-only" type="checkbox" name="card-cost" :value="cost" />

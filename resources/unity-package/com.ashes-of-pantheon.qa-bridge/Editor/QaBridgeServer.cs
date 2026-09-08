@@ -154,6 +154,10 @@ namespace AshesOfPantheon.QA.EditorBridge
                 {
                     payload = QaMainThreadDispatcher.Invoke(m_adapter.GetBattleSnapshot);
                 }
+                else if (context.Request.HttpMethod == "GET" && path == "/api/battle/route-preview")
+                {
+                    payload = QaMainThreadDispatcher.Invoke(m_adapter.GetRoutePreviewSnapshot);
+                }
                 else if (context.Request.HttpMethod == "GET" && path == "/api/cards")
                 {
                     payload = QaMainThreadDispatcher.Invoke(m_adapter.GetCardInventorySnapshot);
@@ -179,6 +183,11 @@ namespace AshesOfPantheon.QA.EditorBridge
                     request["expiresAt"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + 4000;
                     payload = QaMainThreadDispatcher.Invoke(() => m_adapter.MoveEntity(request));
                 }
+                else if (context.Request.HttpMethod == "DELETE" && path == "/api/equipment")
+                {
+                    var request = JObject.Parse(ReadBody(context.Request));
+                    payload = QaMainThreadDispatcher.Invoke(() => m_adapter.RemoveEquipment(request));
+                }
                 else if (context.Request.HttpMethod == "POST" && path == "/api/player")
                 {
                     var request = JObject.Parse(ReadBody(context.Request));
@@ -198,6 +207,11 @@ namespace AshesOfPantheon.QA.EditorBridge
                 {
                     var request = JObject.Parse(ReadBody(context.Request));
                     payload = QaMainThreadDispatcher.Invoke(() => m_adapter.RemoveBuff(request));
+                }
+                else if (context.Request.HttpMethod == "PATCH" && path == "/api/buffs")
+                {
+                    var request = JObject.Parse(ReadBody(context.Request));
+                    payload = QaMainThreadDispatcher.Invoke(() => m_adapter.UpdateBuff(request));
                 }
                 else if (context.Request.HttpMethod == "POST" && path == "/api/blessings")
                 {

@@ -53,6 +53,7 @@ test('card catalog shows owned counts and supports card inventory actions', asyn
             } as T
           }
         }
+        if (request.path === '/api/battle/route-preview') return { ok: true, message: '操作完成。', data: null as T }
         if (request.path === '/api/cards' && request.method === 'GET') {
           return {
             ok: true,
@@ -198,6 +199,7 @@ test('tab selection and window focus refresh all connected data', async ({ page 
         if (request.path === '/api/cards') {
           return { ok: true, message: '操作完成。', data: { available: true, cards: [] } as T }
         }
+        if (request.path === '/api/battle/route-preview') return { ok: true, message: '操作完成。', data: null as T }
         battleRevision += 1
         return {
           ok: true,

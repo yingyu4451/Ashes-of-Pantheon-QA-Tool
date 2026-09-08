@@ -96,7 +96,7 @@ internal static class MovementBridgeTests
 
 namespace HappyHotel.Enemy
 {
-    public class Enemy : Component { public string TypeId="Enemy01"; public GridObjectComponent Grid=new GridObjectComponent{Point=new Vector2Int(2,2)}; public T GetBehaviorComponent<T>() where T:class=>Grid as T; }
+    public partial class Enemy : Component { public string TypeId="Enemy01"; public GridObjectComponent Grid=new GridObjectComponent{Point=new Vector2Int(2,2)}; public HappyHotel.Core.ValueProcessing.Components.HitPointValueComponent HitPoint = new HappyHotel.Core.ValueProcessing.Components.HitPointValueComponent(); public HappyHotel.Core.ValueProcessing.Components.AttackPowerComponent Attack = new HappyHotel.Core.ValueProcessing.Components.AttackPowerComponent(8,2); public HappyHotel.Buff.Components.BuffContainer Buffs = new HappyHotel.Buff.Components.BuffContainer(); public HappyHotel.Intent.Components.TurnEndIntentExecutorComponent Intents = new HappyHotel.Intent.Components.TurnEndIntentExecutorComponent(); public T GetBehaviorComponent<T>() where T:class=>Grid as T ?? HitPoint as T ?? Attack as T ?? Buffs as T ?? Intents as T; }
     public class EnemyController { public static EnemyController Instance{get;}=new EnemyController(); public List<Enemy> Enemies=new List<Enemy>(); public List<Enemy> GetAllEnemies()=>Enemies; }
 }
 namespace HappyHotel.GameManager
@@ -136,4 +136,4 @@ namespace HappyHotel.Character.Components
         public RelocationResult SettleImmediately(RelocationHandle handle,string reason="ImmediateSettlement") {handle.IsPending=false;Settled=true;IsMovementGateHeld=false;return new RelocationResult();}
     }
 }
-namespace HappyHotel.Prop.RoutePreview { public class RoutePreviewManager { public static RoutePreviewManager Instance{get;}=new RoutePreviewManager();public int Refreshes;public void RequestRefresh(string reason,object source){Refreshes++;} } }
+namespace HappyHotel.Prop.RoutePreview { public class RoutePreviewManager { public static RoutePreviewManager Instance{get;}=new RoutePreviewManager();public int Refreshes; public RoutePreviewResult LatestResult {get;set;}=RoutePreviewResult.Sample(); public RoutePreviewResult ActiveMovementPresentationRoute {get;set;} public void RequestRefresh(string reason,object source){Refreshes++;} } }

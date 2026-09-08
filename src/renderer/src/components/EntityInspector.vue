@@ -10,6 +10,7 @@ const newBuffStacks = ref(1)
 const newBuffDuration = ref(1)
 const blessingBusy = ref(false)
 const propertiesBusy = ref(false)
+const buffBusyId = ref('')
 
 const entity = computed(() => store.selectedEntity)
 const enemy = computed<QaEntity | null>(() => {
@@ -105,12 +106,22 @@ async function removeBuff(instanceId: string): Promise<void> {
   if (index >= 0) targetBuffs.value.splice(index, 1)
 }
 
+async function updateBuff(buff: QaBuff): Promise<void> {
+  if (!entity.value || buffBusyId.value) return
+  buff.stacks = Math.max(0, Number.isFinite(buff.stacks) ? Math.trunc(buff.stacks) : 0)
+  buffBusyId.value = buff.instanceId
+  try {
+    if (store.connectionStatus === 'connected') await store.updateBuff(entity.value.instanceId, buff.instanceId, buff.typeId, buff.stacks)
+  } finally { buffBusyId.value = '' }
+}
+
 function moveIntent(index: number, direction: -1 | 1): void {
   if (!enemy.value?.intents) return
   const destination = index + direction
   if (destination < 0 || destination >= enemy.value.intents.length) return
   const [item] = enemy.value.intents.splice(index, 1)
   if (item) enemy.value.intents.splice(destination, 0, item)
+  store.markIntentDraft(enemy.value)
 }
 
 function addIntent(): void {
@@ -122,20 +133,24 @@ function addIntent(): void {
     typeId: definition.typeId,
     name: definition.name,
     summary: '使用默认参数',
-    parameters
+    parameters,
+    groupIndex: Math.max(-1, ...((enemy.value.intents ?? []).map((item) => item.groupIndex ?? -1))) + 1
   }
   enemy.value.intents ??= []
   enemy.value.intents.push(intent)
+  store.markIntentDraft(enemy.value)
 }
 
 function removeIntent(index: number): void {
   if (!window.confirm('从行动序列删除这个意图？')) return
   enemy.value?.intents?.splice(index, 1)
+  if (enemy.value) store.markIntentDraft(enemy.value)
 }
 
 function clearIntents(): void {
   if (!enemy.value?.intents?.length || !window.confirm('清空当前怪物的全部行动意图？')) return
   enemy.value.intents = []
+  store.markIntentDraft(enemy.value)
 }
 
 async function applyProperties(): Promise<void> {
@@ -147,9 +162,15 @@ async function applyProperties(): Promise<void> {
       if (!store.unsafeValues) {
         store.battle.player.maxCost = Math.max(0, store.battle.player.maxCost)
         store.battle.player.currentCost = Math.min(Math.max(0, store.battle.player.currentCost), store.battle.player.maxCost)
+        if (store.battle.player.shield !== undefined) store.battle.player.shield = Math.max(0, store.battle.player.shield)
+        if (store.battle.player.baseAttack !== undefined) store.battle.player.baseAttack = Math.max(0, store.battle.player.baseAttack)
+        if (store.battle.player.gold !== undefined) store.battle.player.gold = Math.max(0, store.battle.player.gold)
       }
       await store.applyPlayer()
-    } else if (enemy.value) await store.applyEnemy(enemy.value)
+    } else if (enemy.value) {
+      if (!store.unsafeValues && enemy.value.baseAttack !== undefined) enemy.value.baseAttack = Math.max(0, enemy.value.baseAttack)
+      await store.applyEnemy(enemy.value)
+    }
   } catch (error) {
     store.showNotice(error instanceof Error ? error.message : '属性修改失败，请刷新后重试。', 'error')
   } finally { propertiesBusy.value = false }
@@ -214,7 +235,24 @@ async function applyIntentSequence(): Promise<void> {
                 最大费用
                 <input v-model.number="store.battle.player.maxCost" type="number" name="player-max-cost" autocomplete="off" class="input input-sm mt-1 w-full px-2 utility-font text-[13px]" />
               </label>
+              <label class="text-[11px] text-white/43">
+                护盾
+                <input v-model.number="store.battle.player.shield" type="number" min="0" name="player-shield" autocomplete="off" class="input input-sm mt-1 w-full px-2 utility-font text-[13px]" :disabled="store.battle.player.shield === undefined" :placeholder="store.battle.player.shield === undefined ? '需更新 Bridge' : undefined" />
+              </label>
+              <label class="text-[11px] text-white/43">
+                金币
+                <input v-model.number="store.battle.player.gold" type="number" min="0" name="player-gold" autocomplete="off" class="input input-sm mt-1 w-full px-2 utility-font text-[13px]" :disabled="store.battle.player.gold === undefined" :placeholder="store.battle.player.gold === undefined ? '需更新 Bridge' : undefined" />
+              </label>
+              <label class="text-[11px] text-white/43">
+                基础攻击
+                <input v-model.number="store.battle.player.baseAttack" type="number" min="0" name="player-base-attack" autocomplete="off" class="input input-sm mt-1 w-full px-2 utility-font text-[13px]" :disabled="store.battle.player.baseAttack === undefined" :placeholder="store.battle.player.baseAttack === undefined ? '需更新 Bridge' : undefined" />
+              </label>
+              <label class="text-[11px] text-white/43">
+                实际攻击
+                <output class="mt-1 flex h-8 w-full items-center border border-white/10 bg-black/10 px-2 utility-font text-[13px] text-secondary">{{ store.battle.player.attack ?? '—' }}</output>
+              </label>
             </div>
+            <p class="m-0 text-[10px] leading-5 text-white/34">修改基础攻击不会清除祝福或 BUFF；实际攻击包含当前全部修正。</p>
           </template>
 
           <template v-else-if="enemy">
@@ -228,10 +266,16 @@ async function applyIntentSequence(): Promise<void> {
                 <input v-model.number="enemy.maxHp" type="number" name="enemy-max-hp" autocomplete="off" class="input input-sm mt-1 w-full px-2 utility-font text-[13px]" @blur="commitHealth" />
               </label>
             </div>
-            <label class="block text-[11px] text-white/43">
-              攻击力
-              <input v-model.number="enemy.attack" type="number" name="enemy-attack" autocomplete="off" class="input input-sm mt-1 w-full px-2 utility-font text-[13px]" />
-            </label>
+            <div class="grid grid-cols-2 gap-3">
+              <label class="text-[11px] text-white/43">
+                基础攻击
+                <input v-model.number="enemy.baseAttack" type="number" name="enemy-base-attack" autocomplete="off" class="input input-sm mt-1 w-full px-2 utility-font text-[13px]" :disabled="enemy.baseAttack === undefined" :placeholder="enemy.baseAttack === undefined ? '需更新 Bridge' : undefined" />
+              </label>
+              <label class="text-[11px] text-white/43">
+                实际攻击
+                <output class="mt-1 flex h-8 w-full items-center border border-white/10 bg-black/10 px-2 utility-font text-[13px] text-secondary">{{ enemy.attack ?? '—' }}</output>
+              </label>
+            </div>
           </template>
 
           <template v-else>
@@ -320,11 +364,18 @@ async function applyIntentSequence(): Promise<void> {
 
           <div v-if="targetBuffs.length" class="space-y-2">
             <div v-for="buff in targetBuffs" :key="buff.instanceId" class="flex items-center gap-3 border border-white/10 bg-white/[0.025] p-3">
-              <div class="grid h-8 w-8 shrink-0 place-items-center border border-[#7167a8]/45 bg-[#7167a8]/12 utility-font text-[11px] text-[#c6bdf2]">{{ buff.stacks }}</div>
+              <label class="w-14 shrink-0 text-[9px] text-white/38">
+                层数
+                <input v-model.number="buff.stacks" type="number" min="0" :name="`buff-${buff.instanceId}-stacks`" autocomplete="off" class="input input-sm mt-1 h-8 w-full px-1 text-center utility-font text-[11px] text-[#c6bdf2]" :disabled="buffBusyId === buff.instanceId" />
+              </label>
               <div class="min-w-0 flex-1">
                 <p class="m-0 truncate text-[12px] font-semibold text-white/76">{{ buff.name }}</p>
                 <p class="utility-font m-0 mt-0.5 truncate text-[9px] text-white/31">{{ buff.typeId }}<template v-if="buff.remainingTurns"> · {{ buff.remainingTurns }} 回合</template></p>
               </div>
+              <button type="button" class="btn btn-neutral btn-square btn-sm !h-8 !w-8" :aria-label="`保存 ${buff.name} 层数`" :title="`保存 ${buff.name} 层数`" :disabled="Boolean(buffBusyId)" @click="updateBuff(buff)">
+                <RefreshCw v-if="buffBusyId === buff.instanceId" :size="14" class="animate-spin motion-reduce:animate-none" aria-hidden="true" />
+                <Save v-else :size="14" aria-hidden="true" />
+              </button>
               <button type="button" class="btn btn-neutral btn-square btn-sm !h-8 !w-8" :aria-label="`移除 ${buff.name}`" :title="`移除 ${buff.name}`" @click="removeBuff(buff.instanceId)">
                 <Trash2 :size="14" aria-hidden="true" />
               </button>
@@ -336,7 +387,7 @@ async function applyIntentSequence(): Promise<void> {
         <div v-else-if="activeTab === 'intents' && enemy" class="space-y-4">
           <div class="flex gap-2 border-b border-white/9 pb-4">
             <select v-model="store.selectedIntentTypeId" name="intent-type" class="select select-sm min-w-0 flex-1 px-2 text-[12px]" aria-label="选择意图">
-              <option v-for="intent in store.catalog.intents" :key="intent.typeId" :value="intent.typeId">{{ intent.name }}</option>
+              <option v-for="intent in store.catalog.intents" :key="intent.typeId" :value="intent.typeId">{{ intent.name }} · {{ intent.typeId }}</option>
             </select>
             <button type="button" class="btn btn-neutral btn-square btn-sm shrink-0" title="添加意图" aria-label="添加意图" @click="addIntent">
               <Plus :size="15" aria-hidden="true" />
@@ -346,12 +397,13 @@ async function applyIntentSequence(): Promise<void> {
           <ol class="m-0 space-y-2 p-0">
             <li v-for="(intent, index) in enemy.intents" :key="intent.instanceId" class="relative list-none border border-white/11 bg-white/[0.025] p-3">
               <div class="flex items-start gap-2">
-                <label class="mt-0.5 grid h-5 w-5 shrink-0 cursor-pointer place-items-center rounded-full border text-[9px] utility-font" :class="enemy.loopStartIndex === index ? 'border-[#c44536] bg-[#c44536] text-white' : 'border-white/18 text-white/35'" :title="`从第 ${index + 1} 步开始循环`">
-                  <input v-model.number="enemy.loopStartIndex" class="sr-only" type="radio" name="intent-loop-start" :value="index" />
-                  {{ index + 1 }}
+                <label class="mt-0.5 grid h-5 w-5 shrink-0 cursor-pointer place-items-center rounded-full border text-[9px] utility-font" :class="enemy.loopStartIndex === (intent.groupIndex ?? index) ? 'border-[#c44536] bg-[#c44536] text-white' : 'border-white/18 text-white/35'" :title="`从第 ${(intent.groupIndex ?? index) + 1} 回合开始循环`">
+                  <input v-model.number="enemy.loopStartIndex" class="sr-only" type="radio" name="intent-loop-start" :value="intent.groupIndex ?? index" @change="store.markIntentDraft(enemy)" />
+                  {{ (intent.groupIndex ?? index) + 1 }}
                 </label>
                 <div class="min-w-0 flex-1">
                   <p class="m-0 truncate text-[12px] font-semibold text-white/78">{{ intent.name }}</p>
+                  <p class="utility-font m-0 mt-0.5 truncate text-[9px] text-white/42" :title="intent.typeId" translate="no">{{ intent.typeId }}</p>
                   <p class="m-0 mt-1 text-[10px] text-white/36">{{ intent.summary }}</p>
                 </div>
                 <div class="grid shrink-0 grid-cols-2 gap-1">
@@ -361,9 +413,14 @@ async function applyIntentSequence(): Promise<void> {
                 </div>
               </div>
               <div v-if="Object.keys(intent.parameters).length" class="mt-3 grid grid-cols-2 gap-2 border-t border-white/8 pt-3">
-                <label v-for="(_value, key) in intent.parameters" :key="key" class="text-[10px] text-white/34">
+                <label v-for="(value, key) in intent.parameters" :key="key" class="text-[10px] text-white/34">
                   {{ key }}
-                  <input v-model.number="intent.parameters[key]" type="number" :name="`intent-${intent.instanceId}-${key}`" autocomplete="off" class="input input-sm mt-1 w-full px-2 utility-font text-[11px]" />
+                  <span v-if="typeof value === 'boolean'" class="mt-1 flex h-8 items-center gap-2 border border-white/10 bg-black/10 px-2">
+                    <input v-model="intent.parameters[key]" type="checkbox" :name="`intent-${intent.instanceId}-${key}`" class="toggle toggle-xs toggle-secondary" @change="store.markIntentDraft(enemy)" />
+                    <span class="text-[10px] text-white/55">{{ value ? '启用' : '关闭' }}</span>
+                  </span>
+                  <input v-else-if="typeof value === 'number'" v-model.number="intent.parameters[key]" type="number" :name="`intent-${intent.instanceId}-${key}`" autocomplete="off" class="input input-sm mt-1 w-full px-2 utility-font text-[11px]" @input="store.markIntentDraft(enemy)" />
+                  <input v-else v-model="intent.parameters[key]" type="text" :name="`intent-${intent.instanceId}-${key}`" autocomplete="off" class="input input-sm mt-1 w-full px-2 utility-font text-[11px]" @input="store.markIntentDraft(enemy)" />
                 </label>
               </div>
             </li>

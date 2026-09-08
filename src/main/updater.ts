@@ -199,8 +199,10 @@ export async function initializeUpdater(): Promise<void> {
   ipcMain.handle('update:check', () => coordinator.check())
   ipcMain.handle('update:download', () => coordinator.download())
   ipcMain.handle('update:restart', () => coordinator.restart())
-  if (app.isPackaged && !initialError) {
-    const timer = setTimeout(() => void coordinator.check(), 5000)
-    timer.unref()
+  if (app.isPackaged) {
+    const startupTimer = setTimeout(() => void coordinator.check(), 5000)
+    const recurringTimer = setInterval(() => void coordinator.check(), 30 * 60_000)
+    startupTimer.unref()
+    recurringTimer.unref()
   }
 }

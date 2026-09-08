@@ -18,6 +18,18 @@ describe('QA store', () => {
     expect(store.activeFilterCount).toBe(3)
   })
 
+  it('filters to owned cards and clears ownership with the other filters', () => {
+    const store = useQaStore()
+    store.ownedCardCounts = { Greatsword: 2, GuardCharm: 1 }
+    store.selectedOwnedOnly = true
+
+    expect(store.filteredCards.map((card) => card.typeId)).toEqual(['Greatsword', 'GuardCharm'])
+    expect(store.activeFilterCount).toBe(1)
+
+    store.clearFilters()
+    expect(store.selectedOwnedOnly).toBe(false)
+  })
+
   it('sorts cards by descending cost', () => {
     const store = useQaStore()
     store.sortKey = 'cost'

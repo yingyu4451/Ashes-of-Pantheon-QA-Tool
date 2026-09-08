@@ -88,6 +88,17 @@ afterEach(async () => {
 })
 
 describe('packaged updater network', () => {
+  it('checks once after launch and then every 30 minutes', async () => {
+    await vi.advanceTimersByTimeAsync(4_999)
+    expect(requests).toHaveLength(0)
+
+    await vi.advanceTimersByTimeAsync(1)
+    expect(requests.filter(({ url, method }) => url === latest && method === 'HEAD')).toHaveLength(1)
+
+    await vi.advanceTimersByTimeAsync(30 * 60_000 - 5_000)
+    expect(requests.filter(({ url, method }) => url === latest && method === 'HEAD')).toHaveLength(2)
+  })
+
   it('discovers an official ZIP release while the anonymous GitHub API is rate limited', async () => {
     const result = await platform.handlers.get('update:check')!()
 

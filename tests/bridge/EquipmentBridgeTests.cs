@@ -13,6 +13,7 @@ internal static class EquipmentBridgeTests
         foreach (var adapter in adapters)
         {
             if (args.Contains("movement")) MovementBridgeTests.Run(adapter);
+            if (args.Contains("runtime")) RuntimeBridgeTests.Run(adapter);
             if (args.Contains("catalog"))
             {
                 var catalog = JObject.FromObject(adapter.GetType().GetMethod("GetCatalog").Invoke(adapter, null));
@@ -32,6 +33,16 @@ internal static class EquipmentBridgeTests
                 HappyHotel.Prop.PropController.Instance.Props.RemoveAt(0);
                 var after = JObject.FromObject(adapter.GetType().GetMethod("GetBattleSnapshot").Invoke(adapter, null));
                 Check(after["entities"].Count(item => item["kind"].Value<string>() == "equipment") == 1, "Removed equipment must disappear in next snapshot");
+                HappyHotel.Prop.PropController.Reset();
+                var beforeDelete = JObject.FromObject(adapter.GetType().GetMethod("GetBattleSnapshot").Invoke(adapter, null));
+                var deployed = beforeDelete["entities"].Where(item => item["kind"].Value<string>() == "equipment").ToList();
+                var deletedId = deployed[1]["moveTargetId"].Value<string>();
+                var keptId = deployed[0]["moveTargetId"].Value<string>();
+                var deletion = JObject.FromObject(adapter.GetType().GetMethod("RemoveEquipment").Invoke(adapter, new object[] { new JObject { ["moveTargetId"] = deletedId } }));
+                Check(deletion["success"].Value<bool>(), "Exact equipment deletion must succeed");
+                var afterDelete = JObject.FromObject(adapter.GetType().GetMethod("GetBattleSnapshot").Invoke(adapter, null));
+                var remaining = afterDelete["entities"].Where(item => item["kind"].Value<string>() == "equipment").ToList();
+                Check(remaining.Count == 1 && remaining[0]["moveTargetId"].Value<string>() == keptId, "Deleting one duplicate must preserve the other runtime instance");
                 HappyHotel.Prop.PropController.Reset();
             }
         }
@@ -89,6 +100,13 @@ namespace UnityEngine.Localization.Settings
         {
             if (entry.Key == "Equipment/equipment-01/Name") return locale?.Code == "zh-Hans" ? "真实中文长剑" : "English Sword";
             if (entry.Key == "Equipment/armilla-legio-xviii-template/Name") return locale?.Code == "zh-Hans" ? "第十八军团臂章" : "Armilla";
+            if (entry.Key == "Donum/TestBlessing/Name") return locale?.Code == "zh-Hans" ? "测试祝福" : "Test Blessing";
+            if (entry.Key == "Donum/TestBlessing/Description") return locale?.Code == "zh-Hans" ? "测试祝福说明" : "Test blessing description";
+            if (entry.Key == "Buff/TestBuff/Name") return locale?.Code == "zh-Hans" ? "测试增益" : "Test Buff";
+            if (entry.Key == "Buff/TestBuff/Description") return locale?.Code == "zh-Hans" ? "测试增益说明" : "Test buff description";
+            if (entry.Key == "Intent/AureliaDashAttack/Name") return locale?.Code == "zh-Hans" ? "奥蕾莉亚冲刺攻击" : "Aurelia Dash Attack";
+            if (entry.Key == "Intent/MultiAttackMainCharacter/Name") return locale?.Code == "zh-Hans" ? "多次攻击玩家" : "Multi Attack Main Character";
+            if (entry.Key != null && entry.Key.StartsWith("Intent/")) return "测试意图说明";
             return "No translation found for '" + entry.Key + "'";
         }
     }
@@ -125,7 +143,8 @@ namespace HappyHotel.Card
         public void Initialize() {} public List<CardIndex> GetAllIndexEntries()=>Entries;
         public string GetType(string id)=>id; public CardIndex GetIndexEntry(string id)=>Entries.Find(e=>e.TypeId==id);
     }
-    public class EquipmentCard { public string TypeId="Equipment01"; public Templates.EquipmentTemplate Template=>CardRegistry.Instance.Entries[0].template; public bool Bound=true; }
+    public class EquipmentCard { public string TypeId="Equipment01"; public Templates.EquipmentTemplate Template=>CardRegistry.Instance.Entries[0].template; public bool Bound=true; public void Dispose() {} }
+    public class CardManager { public static CardManager Instance { get; }=new CardManager(); public void Remove(object card) {} }
 }
 namespace HappyHotel.Core.Grid.Components {
     public class GridObjectComponent {
@@ -139,6 +158,7 @@ namespace HappyHotel.Core.Grid.Components {
 }
 namespace HappyHotel.Prop
 {
+    public enum PropRemovalReason { RunReset }
     public class PropBase : UnityEngine.Component {}
     public class EquipmentPropBase : PropBase
     {
@@ -158,17 +178,22 @@ namespace HappyHotel.Prop
         public static void Reset() { Instance=new PropController(); }
         public List<EquipmentPropBase> Props=new List<EquipmentPropBase>{ new EquipmentPropBase{TypeId="DifferentPropType",Source=new HappyHotel.Card.EquipmentCard()}, new EquipmentPropBase(), new EquipmentPropBase{Removed=true}, new EquipmentPropBase{Source=new HappyHotel.Card.EquipmentCard{Bound=false}} };
         public List<T> GetAllPropsOfType<T>() where T:PropBase =>Props.OfType<T>().ToList();
+        public bool RemoveProp(EquipmentPropBase prop, PropRemovalReason reason) { prop.Removed=true; return Props.Remove(prop); }
     }
 }
-namespace HappyHotel.Inventory { public class EquipmentCardDeploymentService { public static EquipmentCardDeploymentService Instance {get;}=new EquipmentCardDeploymentService(); public bool IsBound(HappyHotel.Card.EquipmentCard card)=>card.Bound; } }
+namespace HappyHotel.Inventory { public class EquipmentCardDeploymentService { public static EquipmentCardDeploymentService Instance {get;}=new EquipmentCardDeploymentService(); public bool IsBound(HappyHotel.Card.EquipmentCard card)=>card.Bound; public bool IsTemporary(HappyHotel.Card.EquipmentCard card)=>false; } }
 namespace HappyHotel.Character {
-    public class MainCharacter : UnityEngine.Component {
+    public partial class MainCharacter : UnityEngine.Component {
         public string CharacterId="MainCharacter";
         public Core.Grid.Components.GridObjectComponent Grid = new Core.Grid.Components.GridObjectComponent();
         public Core.Grid.Components.AutoMoveComponent Auto = new Core.Grid.Components.AutoMoveComponent();
         public Components.MainCharacterRelocationComponent Relocation;
         public MainCharacter() { Relocation = new Components.MainCharacterRelocationComponent(this); }
-        public T GetBehaviorComponent<T>() where T:class => Grid as T ?? Auto as T ?? Relocation as T;
+        public HappyHotel.Core.ValueProcessing.Components.HitPointValueComponent HitPoint = new HappyHotel.Core.ValueProcessing.Components.HitPointValueComponent();
+        public HappyHotel.Core.ValueProcessing.Components.ArmorValueComponent Armor = new HappyHotel.Core.ValueProcessing.Components.ArmorValueComponent();
+        public HappyHotel.Core.ValueProcessing.Components.AttackPowerComponent Attack = new HappyHotel.Core.ValueProcessing.Components.AttackPowerComponent(7,4);
+        public HappyHotel.Buff.Components.BuffContainer Buffs = new HappyHotel.Buff.Components.BuffContainer();
+        public T GetBehaviorComponent<T>() where T:class => Grid as T ?? Auto as T ?? Relocation as T ?? HitPoint as T ?? Armor as T ?? Attack as T ?? Buffs as T;
     }
     public class CharacterController { public static CharacterController Instance{get;}=new CharacterController(); public MainCharacter Player = new MainCharacter(); public object[] GetAllCharacters()=>new object[]{Player}; }
 }

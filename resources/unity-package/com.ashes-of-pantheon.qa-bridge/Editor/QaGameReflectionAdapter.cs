@@ -170,8 +170,14 @@ namespace AshesOfPantheon.QA.EditorBridge
                 phase = "runtime",
                 player,
                 movement = MovementAvailability(),
+                routePreview = GetRoutePreview(),
                 entities = enemyDtos.Concat(GetEquipmentEntities()).ToList()
             };
+        }
+
+        public object GetRoutePreviewSnapshot()
+        {
+            return GetRoutePreview();
         }
 
         public object ExecuteGm(string command)
@@ -203,10 +209,32 @@ namespace AshesOfPantheon.QA.EditorBridge
             if (player == null) return Failure("Main character is unavailable.");
             var hp = GetBehaviorComponent(player, "HappyHotel.Core.ValueProcessing.Components.HitPointValueComponent");
             var cost = GetSingleton("HappyHotel.GameManager.CostManager");
+            var armorValue = request["shield"] == null
+                ? null
+                : ReadMember<object>(GetBehaviorComponent(player, "HappyHotel.Core.ValueProcessing.Components.ArmorValueComponent"), "ArmorValue");
+            var attack = request["baseAttack"] == null
+                ? null
+                : GetBehaviorComponent(player, "HappyHotel.Core.ValueProcessing.Components.AttackPowerComponent");
+            var money = request["gold"] == null ? null : GetSingleton("HappyHotel.Shop.ShopMoneyManager");
             if (hp == null || cost == null) return Failure("Player value modules are unavailable.");
+            if (request["shield"] != null && armorValue == null) return Failure("Player armor module is unavailable.");
+            if (request["baseAttack"] != null && attack == null) return Failure("Player attack module is unavailable.");
+            if (request["gold"] != null && money == null) return Failure("Player money module is unavailable.");
 
             Invoke(hp, "SetHitPoint", request.Value<int>("maxHp"), request.Value<int>("currentHp"));
             Invoke(cost, "SetCost", request.Value<int>("currentCost"), request.Value<int>("maxCost"), true);
+            if (request["shield"] != null)
+            {
+                Invoke(armorValue, "SetCurrentValue", request.Value<int>("shield"));
+            }
+            if (request["baseAttack"] != null)
+            {
+                Invoke(attack, "SetAttackPower", request.Value<int>("baseAttack"));
+            }
+            if (request["gold"] != null)
+            {
+                Invoke(money, "SetCurrentMoney", request.Value<int>("gold"));
+            }
             return Success("Player values updated.");
         }
 
@@ -219,8 +247,25 @@ namespace AshesOfPantheon.QA.EditorBridge
             if (hp == null || attack == null) return Failure("Enemy value modules are unavailable.");
 
             Invoke(hp, "SetHitPoint", request.Value<int>("maxHp"), request.Value<int>("currentHp"));
-            Invoke(attack, "SetAttackPower", request.Value<int>("attack"));
+            Invoke(attack, "SetAttackPower", request["baseAttack"] != null ? request.Value<int>("baseAttack") : request.Value<int>("attack"));
             return Success("Enemy values updated.");
+        }
+
+        public object RemoveEquipment(JObject request)
+        {
+            var targetId = request.Value<string>("moveTargetId");
+            var prop = GetEquipmentObjects().FirstOrDefault(item => MoveTargetId(item) == targetId);
+            if (prop == null) return Failure("Equipment instance is unavailable.");
+            var controller = GetSingleton("HappyHotel.Prop.PropController");
+            var reasonType = FindType("HappyHotel.Prop.PropRemovalReason");
+            if (controller == null || reasonType == null) return Failure("Equipment removal module is unavailable.");
+            var card = Invoke(prop, "GetSourceEquipment");
+            var deployment = GetSingleton("HappyHotel.Inventory.EquipmentCardDeploymentService");
+            var temporary = card != null && Invoke(deployment, "IsTemporary", card) is bool value && value;
+            if (!(Invoke(controller, "RemoveProp", prop, Enum.Parse(reasonType, "RunReset")) is bool removed) || !removed)
+                return Failure("Equipment removal failed.");
+            if (card != null && !temporary) ReleaseCardInstance(GetSingleton("HappyHotel.Card.CardManager"), card);
+            return Success("Equipment removed.");
         }
 
         public object AddBuff(JObject request)
@@ -252,6 +297,22 @@ namespace AshesOfPantheon.QA.EditorBridge
             if (index < 0 || index >= buffs.Count) return Failure("BUFF instance is unavailable.");
             Invoke(container, "RemoveBuff", buffs[index]);
             return Success("BUFF removed.");
+        }
+
+        public object UpdateBuff(JObject request)
+        {
+            var target = FindTarget(request.Value<string>("targetInstanceId"));
+            var container = GetBehaviorComponent(target, "HappyHotel.Buff.Components.BuffContainer");
+            if (container == null) return Failure("BUFF target is unavailable.");
+            var buffs = Enumerate(Invoke(container, "GetAllBuffs")).ToList();
+            var index = ParseIndexedInstance(request.Value<string>("instanceId"), "buff-");
+            if (index < 0 || index >= buffs.Count) return Failure("BUFF instance is unavailable.");
+            var buff = buffs[index];
+            var expectedTypeId = request.Value<string>("typeId");
+            if (!string.IsNullOrWhiteSpace(expectedTypeId) && !string.Equals(ResolveTypeId(buff), expectedTypeId, StringComparison.Ordinal))
+                return Failure("BUFF list changed; refresh and retry.");
+            Invoke(buff, "SetStacks", Math.Max(0, request.Value<int>("stacks")));
+            return Success("BUFF stacks updated.");
         }
 
         public object AddBlessing(JObject request)
@@ -288,24 +349,37 @@ namespace AshesOfPantheon.QA.EditorBridge
             if (executor == null || registry == null || planType == null) return Failure("Intent modules are unavailable.");
 
             Invoke(registry, "Initialize");
-            var listType = typeof(List<>).MakeGenericType(planType);
-            var plans = (IList)Activator.CreateInstance(listType);
-            foreach (var step in request["steps"] as JArray ?? new JArray())
+            var groupType = executorType.GetNestedType("IntentGroupPlan", BindingFlags.Public);
+            if (groupType == null) return Failure("Intent group module is unavailable.");
+            var planListType = typeof(List<>).MakeGenericType(planType);
+            var groupListType = typeof(List<>).MakeGenericType(groupType);
+            var groups = (IList)Activator.CreateInstance(groupListType);
+            var steps = request["steps"] as JArray ?? new JArray();
+            foreach (var stepGroup in steps.Select((step, index) => new { step, index })
+                         .GroupBy(item => item.step.Value<int?>("groupIndex") ?? item.index))
             {
-                var typeIdText = step.Value<string>("typeId");
-                var typeId = Invoke(registry, "GetType", typeIdText);
-                if (typeId == null) return Failure($"Intent TypeId is not registered: {typeIdText}");
-                var plan = Activator.CreateInstance(planType);
-                WriteMember(plan, "TypeId", typeId);
-                WriteMember(plan, "Setting", CreateSetting(registry, typeId, step["parameters"] as JObject));
-                WriteMember(plan, "ProjectileClassId", string.Empty);
-                plans.Add(plan);
+                var plans = (IList)Activator.CreateInstance(planListType);
+                foreach (var item in stepGroup)
+                {
+                    var step = item.step;
+                    var typeIdText = step.Value<string>("typeId");
+                    var typeId = Invoke(registry, "GetType", typeIdText);
+                    if (typeId == null) return Failure($"Intent TypeId is not registered: {typeIdText}");
+                    var plan = Activator.CreateInstance(planType);
+                    WriteMember(plan, "TypeId", typeId);
+                    WriteMember(plan, "Setting", CreateSetting(registry, typeId, step["parameters"] as JObject));
+                    WriteMember(plan, "ProjectileClassId", step.Value<string>("projectileClassId") ?? string.Empty);
+                    plans.Add(plan);
+                }
+                var group = Activator.CreateInstance(groupType);
+                WriteMember(group, "Intents", plans);
+                groups.Add(group);
             }
 
             var method = executor.GetType().GetMethods(BindingFlags.Public | BindingFlags.Instance)
-                .FirstOrDefault(candidate => candidate.Name == "SetSequenceWithLoopStart" && candidate.GetParameters().Length == 2);
+                .FirstOrDefault(candidate => candidate.Name == "SetGroupSequenceWithLoopStart" && candidate.GetParameters().Length == 2);
             if (method == null) return Failure("Intent sequence setter is unavailable.");
-            method.Invoke(executor, new object[] { plans, request.Value<int>("loopStartIndex") });
+            method.Invoke(executor, new object[] { groups, request.Value<int>("loopStartIndex") });
             return Success("Intent sequence updated.");
         }
 
@@ -554,6 +628,9 @@ namespace AshesOfPantheon.QA.EditorBridge
             var hp = GetBehaviorComponent(player, "HappyHotel.Core.ValueProcessing.Components.HitPointValueComponent");
             var costManager = GetSingleton("HappyHotel.GameManager.CostManager");
             var donumManager = GetSingleton("HappyHotel.Donum.DonumManager");
+            var armor = GetBehaviorComponent(player, "HappyHotel.Core.ValueProcessing.Components.ArmorValueComponent");
+            var attack = GetBehaviorComponent(player, "HappyHotel.Core.ValueProcessing.Components.AttackPowerComponent");
+            var money = GetSingleton("HappyHotel.Shop.ShopMoneyManager");
             var position = GetGridPosition(player);
             return new
             {
@@ -566,6 +643,10 @@ namespace AshesOfPantheon.QA.EditorBridge
                 maxHp = ReadMember<int>(hp, "MaxHitPoint"),
                 currentCost = ReadMember<int>(costManager, "CurrentCost"),
                 maxCost = ReadMember<int>(costManager, "MaxCost"),
+                shield = ReadMember<int>(armor, "CurrentArmor"),
+                baseAttack = ReadBaseAttack(attack),
+                attack = ReadMember<int>(attack, "AttackPower"),
+                gold = ReadMember<int>(money, "CurrentMoney"),
                 blessings = donumManager == null
                     ? Array.Empty<object>()
                     : Enumerate(Invoke(donumManager, "GetAllObjects")).Select(donum =>
@@ -600,6 +681,7 @@ namespace AshesOfPantheon.QA.EditorBridge
                 position = new { x = position.x, y = position.y },
                 currentHp = ReadMember<int>(hp, "CurrentHitPoint"),
                 maxHp = ReadMember<int>(hp, "MaxHitPoint"),
+                baseAttack = ReadBaseAttack(attack),
                 attack = ReadMember<int>(attack, "AttackPower"),
                 buffs = GetBuffs(target),
                 intents = GetIntents(executor),
@@ -610,20 +692,28 @@ namespace AshesOfPantheon.QA.EditorBridge
         private object[] GetIntents(object executor)
         {
             if (executor == null) return Array.Empty<object>();
-            return Enumerate(Invoke(executor, "GetSequence")).Select((plan, index) =>
+            var result = new List<object>();
+            var itemIndex = 0;
+            foreach (var group in Enumerate(Invoke(executor, "GetGroupSequence")).Select((value, index) => new { value, index }))
             {
-                var rawTypeId = ReadMember<object>(plan, "TypeId");
-                var typeId = ReadMember<string>(rawTypeId, "Id") ?? rawTypeId?.ToString() ?? "Unknown";
-                var definition = ResolveRegistryEntry("HappyHotel.Intent.IntentRegistry", typeId, "intentNameLocalized");
-                return new
+                foreach (var plan in Enumerate(ReadMember<object>(group.value, "Intents")))
                 {
-                    instanceId = $"intent-{index}",
-                    typeId,
-                    name = definition.name,
-                    summary = definition.description,
-                    parameters = new Dictionary<string, object>()
-                };
-            }).Cast<object>().ToArray();
+                    var rawTypeId = ReadMember<object>(plan, "TypeId");
+                    var typeId = ReadMember<string>(rawTypeId, "Id") ?? rawTypeId?.ToString() ?? "Unknown";
+                    var definition = ResolveRegistryEntry("HappyHotel.Intent.IntentRegistry", typeId, "intentNameLocalized");
+                    result.Add(new
+                    {
+                        instanceId = $"intent-{itemIndex++}",
+                        typeId,
+                        name = definition.name,
+                        summary = definition.description,
+                        parameters = ReadSettingParameters(ReadMember<object>(plan, "Setting")),
+                        groupIndex = group.index,
+                        projectileClassId = ReadMember<string>(plan, "ProjectileClassId") ?? string.Empty
+                    });
+                }
+            }
+            return result.ToArray();
         }
 
         private object[] GetBuffs(object target)
@@ -638,10 +728,69 @@ namespace AshesOfPantheon.QA.EditorBridge
                     instanceId = $"buff-{index}",
                     definition.typeId,
                     definition.name,
-                    stacks = 1,
+                    stacks = ReadBuffStacks(buff),
                     definition.description
                 };
             }).Cast<object>().ToArray();
+        }
+
+        private static int ReadBuffStacks(object buff)
+        {
+            return Invoke(buff, "GetStacks") is int count ? count : 1;
+        }
+
+        private static int ReadBaseAttack(object attack)
+        {
+            return ReadMember<int>(ReadMember<object>(attack, "runAttackValue"), "CurrentValue");
+        }
+
+        private static Dictionary<string, object> ReadSettingParameters(object setting)
+        {
+            var result = new Dictionary<string, object>(StringComparer.Ordinal);
+            if (setting == null) return result;
+            foreach (var property in setting.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance).Where(item => item.CanRead && item.GetIndexParameters().Length == 0))
+            {
+                var value = property.GetValue(setting);
+                if (IsEditableSettingValue(value)) result[property.Name] = NormalizeSettingValue(value);
+            }
+            foreach (var field in setting.GetType().GetFields(BindingFlags.Public | BindingFlags.Instance))
+            {
+                var value = field.GetValue(setting);
+                if (IsEditableSettingValue(value)) result[field.Name] = NormalizeSettingValue(value);
+            }
+            return result;
+        }
+
+        private static bool IsEditableSettingValue(object value)
+        {
+            return value != null && (value is string || value is bool || value is byte || value is short || value is int || value is long || value is float || value is double || value.GetType().IsEnum);
+        }
+
+        private static object NormalizeSettingValue(object value)
+        {
+            return value.GetType().IsEnum ? value.ToString() : value;
+        }
+
+        private static object GetRoutePreview()
+        {
+            var manager = GetSingleton("HappyHotel.Prop.RoutePreview.RoutePreviewManager");
+            var result = ReadMember<object>(manager, "LatestResult") ?? ReadMember<object>(manager, "ActiveMovementPresentationRoute");
+            if (result == null) return null;
+            var start = ReadMember<Vector2Int>(result, "StartPosition");
+            var terminal = ReadMember<Vector2Int>(result, "TerminalPosition");
+            return new
+            {
+                startPosition = new { x = start.x, y = start.y },
+                steps = Enumerate(ReadMember<object>(result, "Steps")).Select(step =>
+                {
+                    var point = ReadMember<Vector2Int>(step, "Position");
+                    return new { x = point.x, y = point.y };
+                }).ToArray(),
+                hasLoop = ReadMember<bool>(result, "HasLoop"),
+                hasTerminalPosition = ReadMember<bool>(result, "HasTerminalPosition"),
+                terminalPosition = new { x = terminal.x, y = terminal.y },
+                stopReason = ReadMember<object>(result, "StopReason")?.ToString() ?? string.Empty
+            };
         }
 
         private static Vector2Int GetMapSize()

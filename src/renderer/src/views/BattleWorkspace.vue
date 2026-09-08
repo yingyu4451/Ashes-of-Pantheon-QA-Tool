@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { Box, Cable, Crosshair, Move, PackageOpen, RefreshCw, Shield, Skull, UserRound, X } from '@lucide/vue'
+import { Box, Cable, Crosshair, Move, PackageOpen, RefreshCw, Shield, Skull, Trash2, UserRound, X } from '@lucide/vue'
 import EntityInspector from '@/components/EntityInspector.vue'
 import EquipmentPicker from '@/components/EquipmentPicker.vue'
 import { useQaStore } from '@/stores/qa'
@@ -9,6 +9,7 @@ import type { GridPoint, QaEntity } from '@shared/contracts'
 const props = defineProps<{ interactionSuspended?: boolean }>()
 const store = useQaStore()
 const placementBusy = ref(false)
+const deletingEquipmentId = ref('')
 const selectedEquipment = computed(() => store.catalog.equipment.find((item) => item.typeId === store.selectedEquipmentTypeId))
 const gridViewport = ref<HTMLElement | null>(null)
 const gridCellSize = ref(0)
@@ -32,6 +33,35 @@ const gridStyle = computed(() => ({
   height: `${store.battle.height * gridCellSize.value}px`
 }))
 
+const routePoints = computed(() => {
+  const route = store.battle.routePreview
+  if (!route) return []
+  return [route.startPosition, ...route.steps].filter((point, index, points) => index === 0 || point.x !== points[index - 1]!.x || point.y !== points[index - 1]!.y)
+})
+const routePath = computed(() => routePoints.value.map((point, index) => {
+  const x = (point.x - minX.value + 0.5) * gridCellSize.value
+  const y = (maxY.value - point.y + 0.5) * gridCellSize.value
+  return `${index === 0 ? 'M' : 'L'} ${x} ${y}`
+}).join(' '))
+const routeTerminal = computed(() => {
+  const route = store.battle.routePreview
+  if (!route?.hasTerminalPosition || !route.terminalPosition) return null
+  return {
+    x: (route.terminalPosition.x - minX.value + 0.5) * gridCellSize.value,
+    y: (maxY.value - route.terminalPosition.y + 0.5) * gridCellSize.value
+  }
+})
+const stopReasonLabels: Record<string, string> = {
+  HitWall: '撞墙停止', StoppedByProp: '被装备停止', LoopDetected: '检测到循环', MaxStepReached: '达到预览上限',
+  PlayerDied: '预计阵亡', MovementExhausted: '移动力耗尽', MissingMainCharacter: '未找到主角', None: '计算中'
+}
+const routeSummary = computed(() => {
+  const route = store.battle.routePreview
+  if (!route) return ''
+  const destination = route.hasTerminalPosition && route.terminalPosition ? `${route.terminalPosition.x}, ${route.terminalPosition.y}` : '无'
+  return `预计路线 ${route.steps.length} 格 · 预计终点 ${destination} · ${stopReasonLabels[route.stopReason] ?? route.stopReason}`
+})
+
 function updateGridCellSize(): void {
   const viewport = gridViewport.value
   if (!viewport || store.battle.width <= 0 || store.battle.height <= 0) return
@@ -45,15 +75,21 @@ function updateGridCellSize(): void {
 }
 
 let gridResizeObserver: ResizeObserver | undefined
+let routeRefreshTimer: ReturnType<typeof setInterval> | undefined
 
 onMounted(() => {
   updateGridCellSize()
+  void store.refreshRoutePreview()
+  routeRefreshTimer = setInterval(() => void store.refreshRoutePreview(), 800)
   if (!gridViewport.value) return
   gridResizeObserver = new ResizeObserver(updateGridCellSize)
   gridResizeObserver.observe(gridViewport.value)
 })
 
-onUnmounted(() => gridResizeObserver?.disconnect())
+onUnmounted(() => {
+  gridResizeObserver?.disconnect()
+  if (routeRefreshTimer) clearInterval(routeRefreshTimer)
+})
 
 watch(() => [store.battle.width, store.battle.height], async () => {
   await nextTick()
@@ -224,6 +260,13 @@ async function placeEquipment(): Promise<void> {
     store.showNotice(error instanceof Error ? error.message : '装备放置失败，请刷新后重试。', 'error')
   } finally { placementBusy.value = false }
 }
+
+async function removeEquipment(entity: QaEntity): Promise<void> {
+  if (!entity.moveTargetId || deletingEquipmentId.value || !window.confirm(`从战场删除“${entity.name}”？`)) return
+  deletingEquipmentId.value = entity.moveTargetId
+  try { await store.removeEquipment(entity.moveTargetId) }
+  finally { deletingEquipmentId.value = '' }
+}
 </script>
 
 <template>
@@ -244,30 +287,38 @@ async function placeEquipment(): Promise<void> {
       </div>
 
       <div class="min-h-0 flex-1 overflow-y-auto p-2">
-        <button
+        <div
           v-for="entity in allEntities"
           :key="entity.instanceId"
-          type="button"
-          class="mb-1 flex min-h-[64px] w-full items-center gap-2 border border-transparent px-2 py-2 text-left hover:bg-white/4"
+          class="mb-1 flex min-h-[64px] w-full items-stretch border border-transparent hover:bg-white/4"
           :class="store.selectedEntityId === entity.instanceId ? 'border-[#c6a451]/28 bg-[#c6a451]/8' : ''"
-          :aria-label="`${entity.name} ${entity.typeId}，位置 ${entity.position.x}, ${entity.position.y}`"
-          @click="selectEntity(entity)"
         >
-          <span
-            class="grid h-8 w-8 shrink-0 place-items-center border"
-            :class="entity.kind === 'player' ? 'border-[#d6b85e]/55 bg-[#d6b85e]/10 text-[#f1d77e]' : entity.kind === 'enemy' ? 'border-[#c44536]/55 bg-[#c44536]/11 text-[#e86857]' : 'border-[#7167a8]/55 bg-[#7167a8]/12 text-[#b4aae4]'"
+          <button
+            type="button"
+            class="flex min-w-0 flex-1 items-center gap-2 px-2 py-2 text-left focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-secondary"
+            :aria-label="`${entity.name} ${entity.typeId}，位置 ${entity.position.x}, ${entity.position.y}`"
+            @click="selectEntity(entity)"
           >
-            <UserRound v-if="entity.kind === 'player'" :size="15" aria-hidden="true" />
-            <Skull v-else-if="entity.kind === 'enemy'" :size="15" aria-hidden="true" />
-            <PackageOpen v-else :size="15" aria-hidden="true" />
-          </span>
-          <span class="min-w-0 flex-1">
-            <span class="block truncate text-[12px] font-semibold text-white/72">{{ entity.name }}</span>
-            <span v-if="entity.kind === 'equipment'" class="utility-font mt-0.5 block truncate text-[9px] text-white/45" :title="entity.typeId" translate="no">{{ entity.typeId }}</span>
-            <span class="mt-0.5 block utility-font text-[9px] text-white/28">{{ entity.position.x }}, {{ entity.position.y }}</span>
-          </span>
-          <span v-if="entity.currentHp !== undefined" class="utility-font text-[10px] text-white/40">{{ entity.currentHp }}/{{ entity.maxHp }}</span>
-        </button>
+            <span
+              class="grid h-8 w-8 shrink-0 place-items-center border"
+              :class="entity.kind === 'player' ? 'border-[#d6b85e]/55 bg-[#d6b85e]/10 text-[#f1d77e]' : entity.kind === 'enemy' ? 'border-[#c44536]/55 bg-[#c44536]/11 text-[#e86857]' : 'border-[#7167a8]/55 bg-[#7167a8]/12 text-[#b4aae4]'"
+            >
+              <UserRound v-if="entity.kind === 'player'" :size="15" aria-hidden="true" />
+              <Skull v-else-if="entity.kind === 'enemy'" :size="15" aria-hidden="true" />
+              <PackageOpen v-else :size="15" aria-hidden="true" />
+            </span>
+            <span class="min-w-0 flex-1">
+              <span class="block truncate text-[12px] font-semibold text-white/72">{{ entity.name }}</span>
+              <span v-if="entity.kind === 'equipment'" class="utility-font mt-0.5 block truncate text-[9px] text-white/45" :title="entity.typeId" translate="no">{{ entity.typeId }}</span>
+              <span class="mt-0.5 block utility-font text-[9px] text-white/28">{{ entity.position.x }}, {{ entity.position.y }}</span>
+            </span>
+            <span v-if="entity.currentHp !== undefined" class="utility-font text-[10px] text-white/40">{{ entity.currentHp }}/{{ entity.maxHp }}</span>
+          </button>
+          <button v-if="entity.kind === 'equipment'" type="button" class="btn btn-ghost btn-square btn-sm my-auto mr-1 shrink-0 text-white/38 hover:bg-error/12 hover:text-error" :disabled="Boolean(deletingEquipmentId)" :title="`删除 ${entity.name}`" :aria-label="`删除 ${entity.name}`" @click="removeEquipment(entity)">
+            <RefreshCw v-if="deletingEquipmentId === entity.moveTargetId" :size="14" class="animate-spin motion-reduce:animate-none" aria-hidden="true" />
+            <Trash2 v-else :size="14" aria-hidden="true" />
+          </button>
+        </div>
       </div>
 
       <div class="shrink-0 border-t border-white/9 p-3">
@@ -290,6 +341,7 @@ async function placeEquipment(): Promise<void> {
         <div class="min-w-0">
           <h2 id="battle-map-title" class="m-0 text-[14px] font-bold text-white/80">战斗地图</h2>
           <p class="utility-font m-0 mt-1 truncate">{{ store.battle.mapName }} · {{ store.battle.width }}×{{ store.battle.height }}</p>
+          <p v-if="routeSummary" data-testid="route-summary" class="m-0 mt-1 truncate text-[10px] text-[#8ed9c3]">{{ routeSummary }}</p>
         </div>
         <div class="flex items-center gap-2">
           <span class="flex items-center gap-2"><Crosshair :size="13" aria-hidden="true" /> 选中格 {{ store.selectedCell ? `${store.selectedCell.x}, ${store.selectedCell.y}` : '—' }}</span>
@@ -364,6 +416,17 @@ async function placeEquipment(): Promise<void> {
                 </button>
               </div>
             </div>
+            <svg v-if="routePath" data-testid="route-preview" class="pointer-events-none absolute inset-0 z-[15] overflow-visible" :width="store.battle.width * gridCellSize" :height="store.battle.height * gridCellSize" :viewBox="`0 0 ${store.battle.width * gridCellSize} ${store.battle.height * gridCellSize}`" aria-hidden="true">
+              <defs>
+                <marker id="route-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+                  <path d="M 0 0 L 10 5 L 0 10 z" fill="#8ed9c3" />
+                </marker>
+              </defs>
+              <path :d="routePath" fill="none" stroke="rgb(25 30 29 / 0.82)" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" />
+              <path :d="routePath" fill="none" stroke="#8ed9c3" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" :stroke-dasharray="store.battle.routePreview?.hasLoop ? '5 4' : undefined" marker-end="url(#route-arrow)" />
+              <circle v-if="routeTerminal" :cx="routeTerminal.x" :cy="routeTerminal.y" r="7" fill="#171619" stroke="#f0c85c" stroke-width="3" />
+              <circle v-if="routeTerminal" :cx="routeTerminal.x" :cy="routeTerminal.y" r="2" fill="#f0c85c" />
+            </svg>
           </div>
         </div>
       </div>

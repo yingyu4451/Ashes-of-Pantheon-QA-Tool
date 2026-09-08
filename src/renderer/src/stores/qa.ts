@@ -10,6 +10,7 @@ import type {
   QaCardInventorySnapshot,
   QaCatalog,
   QaEntity,
+  QaRoutePreview,
   OperationResult,
   Rarity,
   UpdateStatus,
@@ -34,7 +35,7 @@ export const useQaStore = defineStore('qa', () => {
   const gameBuildPath = ref('')
   const updateStatus = ref<UpdateStatus>({
     phase: nativeMode ? 'idle' : 'disabled',
-    currentVersion: '0.1.13',
+    currentVersion: '0.1.14',
     message: nativeMode ? '尚未检查更新。' : '开发模式不检查更新。'
   })
   const runtimeReady = ref(!nativeMode)
@@ -55,12 +56,15 @@ export const useQaStore = defineStore('qa', () => {
   const selectedCategories = ref<CardCategory[]>([])
   const selectedCosts = ref<number[]>([])
   const selectedRarities = ref<Rarity[]>([])
+  const selectedOwnedOnly = ref(false)
   const sortKey = ref<'typeId' | 'category' | 'cost' | 'rarity'>('category')
   const sortDirection = ref<'asc' | 'desc'>('asc')
   let connectionMonitor: ReturnType<typeof setInterval> | undefined
   let updateUnsubscribe: (() => void) | undefined
   let refreshInFlight: Promise<OperationResult> | undefined
+  let routeRefreshInFlight: Promise<void> | undefined
   let refreshAnnouncementRequested = false
+  const intentDrafts = new Map<string, { intents: QaEntity['intents']; loopStartIndex?: number }>()
 
   const selectedEntity = computed<QaEntity | null>(() => {
     if (selectedEntityId.value === battle.value.player.instanceId) {
@@ -90,7 +94,8 @@ export const useQaStore = defineStore('qa', () => {
       const matchesCategory = selectedCategories.value.length === 0 || selectedCategories.value.includes(card.category)
       const matchesCost = selectedCosts.value.length === 0 || selectedCosts.value.includes(card.cost)
       const matchesRarity = selectedRarities.value.length === 0 || selectedRarities.value.includes(card.rarity)
-      return matchesSearch && matchesCategory && matchesCost && matchesRarity
+      const matchesOwned = !selectedOwnedOnly.value || (ownedCardCounts.value[card.typeId] ?? 0) > 0
+      return matchesSearch && matchesCategory && matchesCost && matchesRarity && matchesOwned
     })
     const multiplier = sortDirection.value === 'asc' ? 1 : -1
     return cards.sort((left, right) => {
@@ -101,7 +106,7 @@ export const useQaStore = defineStore('qa', () => {
     })
   })
 
-  const activeFilterCount = computed(() => selectedCategories.value.length + selectedCosts.value.length + selectedRarities.value.length)
+  const activeFilterCount = computed(() => selectedCategories.value.length + selectedCosts.value.length + selectedRarities.value.length + (selectedOwnedOnly.value ? 1 : 0))
 
   function reconcileSelection(current: string, entries: Array<{ typeId: string }>): string {
     return entries.some((entry) => entry.typeId === current) ? current : (entries[0]?.typeId ?? '')
@@ -162,6 +167,7 @@ export const useQaStore = defineStore('qa', () => {
     selectedCategories.value = []
     selectedCosts.value = []
     selectedRarities.value = []
+    selectedOwnedOnly.value = false
   }
 
   function selectEntity(entityId: string): void {
@@ -239,7 +245,7 @@ export const useQaStore = defineStore('qa', () => {
     applyCardInventorySnapshot(cardInventoryResult.data)
     connectionStatus.value = 'connected'
     runtimeReady.value = Boolean(battleResult.ok && battleResult.data && battleResult.data.available !== false)
-    if (runtimeReady.value && battleResult.data) battle.value = battleResult.data
+    if (runtimeReady.value && battleResult.data) applyBattleSnapshot(battleResult.data)
     connectionLabel.value = instance.displayName
     startConnectionMonitor()
     const message = runtimeReady.value ? '目录与战斗状态已同步。' : '卡牌目录已同步；进入 Play Mode 后可读取战斗状态。'
@@ -283,7 +289,7 @@ export const useQaStore = defineStore('qa', () => {
 
     if (battleResult.ok && battleResult.data) {
       runtimeReady.value = battleResult.data.available !== false
-      if (runtimeReady.value) battle.value = battleResult.data
+      if (runtimeReady.value) applyBattleSnapshot(battleResult.data)
     } else {
       runtimeReady.value = false
     }
@@ -313,12 +319,35 @@ export const useQaStore = defineStore('qa', () => {
     return refreshInFlight
   }
 
+  function refreshRoutePreview(): Promise<void> {
+    if (routeRefreshInFlight) return routeRefreshInFlight
+    const instanceId = connectedInstanceId.value
+    if (!window.qaNative || !instanceId || connectionStatus.value !== 'connected' || movingTargetId.value) return Promise.resolve()
+    routeRefreshInFlight = window.qaNative.requestBridge<QaRoutePreview | null>({ instanceId, method: 'GET', path: '/api/battle/route-preview' })
+      .then((result) => {
+        if (connectedInstanceId.value === instanceId && result.ok) battle.value.routePreview = result.data ?? undefined
+      })
+      .finally(() => { routeRefreshInFlight = undefined })
+    return routeRefreshInFlight
+  }
+
   function applyCardInventorySnapshot(snapshot?: QaCardInventorySnapshot): void {
     const cards = snapshot?.available && Array.isArray(snapshot.cards) ? snapshot.cards : null
     cardInventoryAvailable.value = Boolean(cards)
+    if (!cards) selectedOwnedOnly.value = false
     ownedCardCounts.value = cards
       ? Object.fromEntries(cards.filter((card) => card.count > 0).map((card) => [card.typeId, card.count]))
       : {}
+  }
+
+  function applyBattleSnapshot(snapshot: QaBattleSnapshot): void {
+    battle.value = snapshot
+    for (const entity of battle.value.entities) {
+      const draft = intentDrafts.get(entity.instanceId)
+      if (!draft) continue
+      entity.intents = clone(draft.intents ?? [])
+      entity.loopStartIndex = draft.loopStartIndex
+    }
   }
 
   async function mutateOwnedCard(typeId: string, method: 'POST' | 'DELETE'): Promise<OperationResult> {
@@ -356,6 +385,24 @@ export const useQaStore = defineStore('qa', () => {
     return mutateOwnedCard(typeId, 'DELETE')
   }
 
+  async function removeEquipment(moveTargetId: string): Promise<OperationResult> {
+    if (!window.qaNative || !connectedInstanceId.value) {
+      const operation = { ok: false, message: '没有已连接的运行实例。' }
+      showNotice(operation.message, 'error')
+      return operation
+    }
+    const result = await window.qaNative.requestBridge<{ success: boolean; message: string }>({
+      instanceId: connectedInstanceId.value,
+      method: 'DELETE',
+      path: '/api/equipment',
+      body: { moveTargetId }
+    })
+    const operation = { ok: Boolean(result.ok && result.data?.success), message: result.data?.message ?? result.message }
+    if (operation.ok) await refreshRuntime(false)
+    showNotice(operation.message, operation.ok ? 'success' : 'error')
+    return operation
+  }
+
   async function executeGm(command: string, announce = true): Promise<OperationResult> {
     if (!window.qaNative || !connectedInstanceId.value) return { ok: false, message: '没有已连接的运行实例。' }
     const result = await window.qaNative.requestBridge<{ success: boolean; message: string }>({
@@ -372,7 +419,7 @@ export const useQaStore = defineStore('qa', () => {
     return operation
   }
 
-  async function requestMutation(path: string, method: 'POST' | 'DELETE', body: unknown): Promise<OperationResult> {
+  async function requestMutation(path: string, method: 'POST' | 'PATCH' | 'DELETE', body: unknown): Promise<OperationResult> {
     if (connectionStatus.value === 'demo') { showNotice('演示快照已更新。', 'success'); return { ok: true, message: '演示快照已更新。' } }
     if (!window.qaNative || !connectedInstanceId.value) return { ok: false, message: '没有已连接的运行实例。' }
     const result = await window.qaNative.requestBridge<{ success: boolean; message: string }>({
@@ -413,7 +460,7 @@ export const useQaStore = defineStore('qa', () => {
       if (snapshot.ok && snapshot.data) {
         runtimeReady.value = snapshot.data.available !== false
         if (runtimeReady.value) {
-          battle.value = snapshot.data
+          applyBattleSnapshot(snapshot.data)
           const updated = [snapshot.data.player, ...snapshot.data.entities].find((item) => item?.moveTargetId === entity.moveTargetId)
           if (updated) { selectedEntityId.value = updated.instanceId; selectedCell.value = updated.position }
         }
@@ -436,6 +483,9 @@ export const useQaStore = defineStore('qa', () => {
       maxHp: player.maxHp,
       currentCost: player.currentCost,
       maxCost: player.maxCost,
+      shield: player.shield,
+      baseAttack: player.baseAttack,
+      gold: player.gold,
       unsafe: unsafeValues.value
     })
   }
@@ -445,7 +495,7 @@ export const useQaStore = defineStore('qa', () => {
       instanceId: enemy.instanceId,
       currentHp: enemy.currentHp,
       maxHp: enemy.maxHp,
-      attack: enemy.attack,
+      baseAttack: enemy.baseAttack ?? enemy.attack,
       unsafe: unsafeValues.value
     })
   }
@@ -456,6 +506,10 @@ export const useQaStore = defineStore('qa', () => {
 
   function removeBuff(targetInstanceId: string, instanceId: string): Promise<OperationResult> {
     return requestMutation('/api/buffs', 'DELETE', { targetInstanceId, instanceId })
+  }
+
+  function updateBuff(targetInstanceId: string, instanceId: string, typeId: string, stacks: number): Promise<OperationResult> {
+    return requestMutation('/api/buffs', 'PATCH', { targetInstanceId, instanceId, typeId, stacks })
   }
 
   function addBlessing(typeId: string): Promise<OperationResult> {
@@ -470,8 +524,21 @@ export const useQaStore = defineStore('qa', () => {
     return requestMutation('/api/intents', 'POST', {
       instanceId: enemy.instanceId,
       loopStartIndex: enemy.loopStartIndex ?? -1,
-      steps: enemy.intents?.map((intent) => ({ typeId: intent.typeId, parameters: intent.parameters })) ?? []
+      steps: enemy.intents?.map((intent, index) => ({
+        typeId: intent.typeId,
+        parameters: { ...toRaw(intent.parameters) },
+        groupIndex: intent.groupIndex ?? index,
+        projectileClassId: intent.projectileClassId
+      })) ?? []
+    }).then((result) => {
+      if (result.ok) intentDrafts.delete(enemy.instanceId)
+      return result
     })
+  }
+
+  function markIntentDraft(enemy: QaEntity): void {
+    if (!enemy.intents) return
+    intentDrafts.set(enemy.instanceId, { intents: clone(toRaw(enemy.intents)), loopStartIndex: enemy.loopStartIndex })
   }
 
   async function initialize(): Promise<void> {
@@ -561,6 +628,7 @@ export const useQaStore = defineStore('qa', () => {
     selectedCategories,
     selectedCosts,
     selectedRarities,
+    selectedOwnedOnly,
     sortKey,
     sortDirection,
     filteredCards,
@@ -574,16 +642,20 @@ export const useQaStore = defineStore('qa', () => {
     placeEquipment,
     connectToInstance,
     refreshRuntime,
+    refreshRoutePreview,
     addOwnedCard,
     removeOwnedCard,
+    removeEquipment,
     executeGm,
     applyPlayer,
     applyEnemy,
     addBuff,
     removeBuff,
+    updateBuff,
     addBlessing,
     removeBlessing,
     applyIntents,
+    markIntentDraft,
     rememberPaths,
     checkForUpdates,
     downloadUpdate,

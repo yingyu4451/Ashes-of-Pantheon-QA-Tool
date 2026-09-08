@@ -44,6 +44,8 @@ export interface QaIntentStep {
   name: string
   summary: string
   parameters: Record<string, string | number | boolean>
+  groupIndex?: number
+  projectileClassId?: string
 }
 
 export interface QaEntity {
@@ -56,6 +58,7 @@ export interface QaEntity {
   position: GridPoint
   currentHp?: number
   maxHp?: number
+  baseAttack?: number
   attack?: number
   buffs: QaBuff[]
   intents?: QaIntentStep[]
@@ -72,8 +75,21 @@ export interface QaPlayerState {
   maxHp: number
   currentCost: number
   maxCost: number
+  shield?: number
+  baseAttack?: number
+  attack?: number
+  gold?: number
   blessings: QaBlessing[]
   buffs: QaBuff[]
+}
+
+export interface QaRoutePreview {
+  startPosition: GridPoint
+  steps: GridPoint[]
+  hasLoop: boolean
+  hasTerminalPosition: boolean
+  terminalPosition?: GridPoint
+  stopReason: string
 }
 
 export interface QaBattleSnapshot {
@@ -87,6 +103,7 @@ export interface QaBattleSnapshot {
   phase: string
   player: QaPlayerState
   entities: QaEntity[]
+  routePreview?: QaRoutePreview
 }
 
 export interface QaCatalog {
@@ -167,7 +184,7 @@ export interface QaPreferences {
 
 export interface BridgeRequest {
   instanceId: string
-  method: 'GET' | 'POST' | 'DELETE'
+  method: 'GET' | 'POST' | 'PATCH' | 'DELETE'
   path: string
   body?: unknown
 }

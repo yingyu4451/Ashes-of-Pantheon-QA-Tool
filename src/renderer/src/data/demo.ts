@@ -166,6 +166,10 @@ export const demoBattle: QaBattleSnapshot = {
     maxHp: 80,
     currentCost: 3,
     maxCost: 5,
+    shield: 6,
+    baseAttack: 7,
+    attack: 10,
+    gold: 128,
     blessings: [
       { typeId: 'BattleFervor', name: '战斗狂热', description: '连续攻击时逐步提高伤害。' },
       { typeId: 'LastStand', name: '背水一战', description: '生命较低时获得额外护甲。' }
@@ -183,6 +187,7 @@ export const demoBattle: QaBattleSnapshot = {
       position: { x: 0, y: 2 },
       currentHp: 15,
       maxHp: 15,
+      baseAttack: 4,
       attack: 6,
       buffs: [],
       loopStartIndex: 0,
@@ -199,6 +204,7 @@ export const demoBattle: QaBattleSnapshot = {
       position: { x: 3, y: -1 },
       currentHp: 16,
       maxHp: 16,
+      baseAttack: 3,
       attack: 5,
       buffs: [
         { instanceId: 'buff-enemy-poison', typeId: 'Poison', name: '中毒', stacks: 2, remainingTurns: 2, description: '回合结束时受到伤害。' }
@@ -217,5 +223,13 @@ export const demoBattle: QaBattleSnapshot = {
       position: { x: 1, y: 0 },
       buffs: []
     }
-  ]
+  ],
+  routePreview: {
+    startPosition: { x: -3, y: 1 },
+    steps: [{ x: -2, y: 1 }, { x: -1, y: 1 }, { x: -1, y: 0 }],
+    hasLoop: false,
+    hasTerminalPosition: true,
+    terminalPosition: { x: -1, y: 0 },
+    stopReason: 'MovementExhausted'
+  }
 }

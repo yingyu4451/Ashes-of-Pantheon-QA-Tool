@@ -36,6 +36,6 @@ const items: Array<{ id: WorkspaceId; label: string; icon: Component }> = [
       </button>
     </div>
 
-    <div class="border-t border-white/8 px-2 py-3 text-center utility-font text-[9px] text-white/25 max-[640px]:hidden">QA 0.1.13</div>
+    <div class="border-t border-white/8 px-2 py-3 text-center utility-font text-[9px] text-white/25 max-[640px]:hidden">QA 0.1.14</div>
   </nav>
 </template>

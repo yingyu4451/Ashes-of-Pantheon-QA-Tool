@@ -22,6 +22,7 @@ test.beforeEach(async ({ page }) => {
       requestBridge: async <T>(request: BridgeRequest): Promise<OperationResult<T>> => {
         if (request.path === '/api/catalog') return { ok: true, message: '', data: { cards: [], equipment: [], buffs: [], blessings: [], intents: [] } as T }
         if (request.path === '/api/cards') return { ok: true, message: '', data: { available: true, cards: [] } as T }
+        if (request.path === '/api/battle/route-preview') return { ok: true, message: '', data: structuredClone(snapshot.routePreview) as T }
         if (request.path === '/api/battle') return { ok: true, message: '', data: structuredClone(snapshot) as T }
         if (request.path === '/api/entities/move') {
           control.moves.push(request.body)

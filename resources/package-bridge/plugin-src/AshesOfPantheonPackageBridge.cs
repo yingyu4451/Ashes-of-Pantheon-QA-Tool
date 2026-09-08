@@ -20,7 +20,7 @@ using UnityEngine.SceneManagement;
 
 namespace AshesOfPantheon.QA.PackageBridge
 {
-    [BepInPlugin("com.ashes-of-pantheon.qa.package-bridge", "Ashes of Pantheon QA Package Bridge", "0.3.2")]
+    [BepInPlugin("com.ashes-of-pantheon.qa.package-bridge", "Ashes of Pantheon QA Package Bridge", "0.3.5")]
     public sealed class PackageBridgePlugin : BaseUnityPlugin
     {
         private static QaBridgeServer s_server;
@@ -183,11 +183,17 @@ namespace AshesOfPantheon.QA.PackageBridge
                 if (context.Request.HttpMethod == "GET" && path == "/api/status") payload = InvokeMain(m_adapter.GetStatus);
                 else if (context.Request.HttpMethod == "GET" && path == "/api/catalog") payload = InvokeMain(m_adapter.GetCatalog);
                 else if (context.Request.HttpMethod == "GET" && path == "/api/battle") payload = InvokeMain(m_adapter.GetBattleSnapshot);
+                else if (context.Request.HttpMethod == "GET" && path == "/api/battle/route-preview") payload = InvokeMain(m_adapter.GetRoutePreviewSnapshot);
                 else if (context.Request.HttpMethod == "POST" && path == "/api/entities/move")
                 {
                     var request = JObject.Parse(ReadBody(context.Request));
                     request["expiresAt"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + 4000;
                     payload = InvokeMain(() => m_adapter.MoveEntity(request));
+                }
+                else if (context.Request.HttpMethod == "DELETE" && path == "/api/equipment")
+                {
+                    var request = JObject.Parse(ReadBody(context.Request));
+                    payload = InvokeMain(() => m_adapter.RemoveEquipment(request));
                 }
                 else if (context.Request.HttpMethod == "GET" && path == "/api/cards") payload = InvokeMain(m_adapter.GetCardInventorySnapshot);
                 else if (context.Request.HttpMethod == "POST" && path == "/api/cards")
@@ -219,6 +225,11 @@ namespace AshesOfPantheon.QA.PackageBridge
                 {
                     var request = JObject.Parse(ReadBody(context.Request));
                     payload = InvokeMain(() => m_adapter.RemoveBuff(request));
+                }
+                else if (context.Request.HttpMethod == "PATCH" && path == "/api/buffs")
+                {
+                    var request = JObject.Parse(ReadBody(context.Request));
+                    payload = InvokeMain(() => m_adapter.UpdateBuff(request));
                 }
                 else if (context.Request.HttpMethod == "POST" && path == "/api/blessings")
                 {
@@ -447,9 +458,31 @@ namespace AshesOfPantheon.QA.PackageBridge
             if (player == null) return Failure("主角实例不可用。");
             var hitPoint = GetBehaviorComponent(player, "HappyHotel.Core.ValueProcessing.Components.HitPointValueComponent");
             var cost = GetSingleton("HappyHotel.GameManager.CostManager");
+            var armorValue = request["shield"] == null
+                ? null
+                : ReadMember<object>(GetBehaviorComponent(player, "HappyHotel.Core.ValueProcessing.Components.ArmorValueComponent"), "ArmorValue");
+            var attack = request["baseAttack"] == null
+                ? null
+                : GetBehaviorComponent(player, "HappyHotel.Core.ValueProcessing.Components.AttackPowerComponent");
+            var money = request["gold"] == null ? null : GetSingleton("HappyHotel.Shop.ShopMoneyManager");
             if (hitPoint == null || cost == null) return Failure("玩家属性模块不可用。");
+            if (request["shield"] != null && armorValue == null) return Failure("玩家护盾模块不可用。");
+            if (request["baseAttack"] != null && attack == null) return Failure("玩家攻击模块不可用。");
+            if (request["gold"] != null && money == null) return Failure("玩家金币模块不可用。");
             Invoke(hitPoint, "SetHitPoint", request.Value<int>("maxHp"), request.Value<int>("currentHp"));
             Invoke(cost, "SetCost", request.Value<int>("currentCost"), request.Value<int>("maxCost"), true);
+            if (request["shield"] != null)
+            {
+                Invoke(armorValue, "SetCurrentValue", request.Value<int>("shield"));
+            }
+            if (request["baseAttack"] != null)
+            {
+                Invoke(attack, "SetAttackPower", request.Value<int>("baseAttack"));
+            }
+            if (request["gold"] != null)
+            {
+                Invoke(money, "SetCurrentMoney", request.Value<int>("gold"));
+            }
             return Success("玩家属性已更新。");
         }
 
@@ -461,8 +494,25 @@ namespace AshesOfPantheon.QA.PackageBridge
             var attack = GetBehaviorComponent(enemy, "HappyHotel.Core.ValueProcessing.Components.AttackPowerComponent");
             if (hitPoint == null || attack == null) return Failure("怪物属性模块不可用。");
             Invoke(hitPoint, "SetHitPoint", request.Value<int>("maxHp"), request.Value<int>("currentHp"));
-            Invoke(attack, "SetAttackPower", request.Value<int>("attack"));
+            Invoke(attack, "SetAttackPower", request["baseAttack"] != null ? request.Value<int>("baseAttack") : request.Value<int>("attack"));
             return Success("怪物属性已更新。");
+        }
+
+        public object RemoveEquipment(JObject request)
+        {
+            var targetId = request.Value<string>("moveTargetId");
+            var prop = GetEquipmentObjects().FirstOrDefault(item => MoveTargetId(item) == targetId);
+            if (prop == null) return Failure("装备实例不可用。");
+            var controller = GetSingleton("HappyHotel.Prop.PropController");
+            var reasonType = FindType("HappyHotel.Prop.PropRemovalReason");
+            if (controller == null || reasonType == null) return Failure("装备移除模块不可用。");
+            var card = Invoke(prop, "GetSourceEquipment");
+            var deployment = GetSingleton("HappyHotel.Inventory.EquipmentCardDeploymentService");
+            var temporary = card != null && Invoke(deployment, "IsTemporary", card) is bool value && value;
+            if (!(Invoke(controller, "RemoveProp", prop, Enum.Parse(reasonType, "RunReset")) is bool removed) || !removed)
+                return Failure("装备移除失败。");
+            if (card != null && !temporary) ReleaseCardInstance(GetSingleton("HappyHotel.Card.CardManager"), card);
+            return Success("装备已移除。");
         }
 
         public object AddBuff(JObject request)
@@ -493,6 +543,22 @@ namespace AshesOfPantheon.QA.PackageBridge
             if (index < 0 || index >= buffs.Count) return Failure("BUFF 实例不可用。");
             Invoke(container, "RemoveBuff", buffs[index]);
             return Success("BUFF 已移除。");
+        }
+
+        public object UpdateBuff(JObject request)
+        {
+            var target = FindTarget(request.Value<string>("targetInstanceId"));
+            var container = GetBehaviorComponent(target, "HappyHotel.Buff.Components.BuffContainer");
+            if (container == null) return Failure("BUFF 目标不可用。");
+            var buffs = Enumerate(Invoke(container, "GetAllBuffs")).ToList();
+            var index = ParseIndexedInstance(request.Value<string>("instanceId"), "buff-");
+            if (index < 0 || index >= buffs.Count) return Failure("BUFF 实例不可用。");
+            var buff = buffs[index];
+            var expectedTypeId = request.Value<string>("typeId");
+            if (!string.IsNullOrWhiteSpace(expectedTypeId) && !string.Equals(ResolveTypeId(buff), expectedTypeId, StringComparison.Ordinal))
+                return Failure("BUFF 列表已变化，请刷新后重试。");
+            Invoke(buff, "SetStacks", Math.Max(0, request.Value<int>("stacks")));
+            return Success("BUFF 层数已更新。");
         }
 
         public object AddBlessing(JObject request)
@@ -529,23 +595,36 @@ namespace AshesOfPantheon.QA.PackageBridge
             var planType = executorType?.GetNestedType("IntentPlan", BindingFlags.Public);
             if (executor == null || registry == null || planType == null) return Failure("意图模块不可用。");
             Invoke(registry, "Initialize");
-            var listType = typeof(List<>).MakeGenericType(planType);
-            var plans = (IList)Activator.CreateInstance(listType);
-            foreach (var step in request["steps"] as JArray ?? new JArray())
+            var groupType = executorType.GetNestedType("IntentGroupPlan", BindingFlags.Public);
+            if (groupType == null) return Failure("意图组模块不可用。");
+            var planListType = typeof(List<>).MakeGenericType(planType);
+            var groupListType = typeof(List<>).MakeGenericType(groupType);
+            var groups = (IList)Activator.CreateInstance(groupListType);
+            var steps = request["steps"] as JArray ?? new JArray();
+            foreach (var stepGroup in steps.Select((step, index) => new { step, index })
+                         .GroupBy(item => item.step.Value<int?>("groupIndex") ?? item.index))
             {
-                var typeIdText = step.Value<string>("typeId");
-                var typeId = Invoke(registry, "GetType", typeIdText);
-                if (typeId == null) return Failure($"未注册的意图 TypeId：{typeIdText}");
-                var plan = Activator.CreateInstance(planType);
-                WriteMember(plan, "TypeId", typeId);
-                WriteMember(plan, "Setting", CreateSetting(registry, typeId, step["parameters"] as JObject));
-                WriteMember(plan, "ProjectileClassId", string.Empty);
-                plans.Add(plan);
+                var plans = (IList)Activator.CreateInstance(planListType);
+                foreach (var item in stepGroup)
+                {
+                    var step = item.step;
+                    var typeIdText = step.Value<string>("typeId");
+                    var typeId = Invoke(registry, "GetType", typeIdText);
+                    if (typeId == null) return Failure($"未注册的意图 TypeId：{typeIdText}");
+                    var plan = Activator.CreateInstance(planType);
+                    WriteMember(plan, "TypeId", typeId);
+                    WriteMember(plan, "Setting", CreateSetting(registry, typeId, step["parameters"] as JObject));
+                    WriteMember(plan, "ProjectileClassId", step.Value<string>("projectileClassId") ?? string.Empty);
+                    plans.Add(plan);
+                }
+                var group = Activator.CreateInstance(groupType);
+                WriteMember(group, "Intents", plans);
+                groups.Add(group);
             }
             var method = executor.GetType().GetMethods(BindingFlags.Public | BindingFlags.Instance)
-                .FirstOrDefault(candidate => candidate.Name == "SetSequenceWithLoopStart" && candidate.GetParameters().Length == 2);
+                .FirstOrDefault(candidate => candidate.Name == "SetGroupSequenceWithLoopStart" && candidate.GetParameters().Length == 2);
             if (method == null) return Failure("意图序列设置器不可用。");
-            method.Invoke(executor, new object[] { plans, request.Value<int>("loopStartIndex") });
+            method.Invoke(executor, new object[] { groups, request.Value<int>("loopStartIndex") });
             return Success("意图序列已更新。");
         }
 
@@ -629,8 +708,14 @@ namespace AshesOfPantheon.QA.PackageBridge
                 phase = "runtime",
                 player = BuildPlayer(characters.FirstOrDefault(IsMainCharacter)),
                 movement = MovementAvailability(),
+                routePreview = GetRoutePreview(),
                 entities = enemies.Select((enemy, index) => BuildEntity(enemy, index)).Where(value => value != null).Concat(GetEquipmentEntities()).ToList()
             };
+        }
+
+        public object GetRoutePreviewSnapshot()
+        {
+            return GetRoutePreview();
         }
 
         public object ExecuteGm(string command)
@@ -851,8 +936,17 @@ namespace AshesOfPantheon.QA.PackageBridge
             if (player == null) return null;
             var hp = GetBehaviorComponent(player, "HappyHotel.Core.ValueProcessing.Components.HitPointValueComponent");
             var cost = GetSingleton("HappyHotel.GameManager.CostManager");
+            var armor = GetBehaviorComponent(player, "HappyHotel.Core.ValueProcessing.Components.ArmorValueComponent");
+            var attack = GetBehaviorComponent(player, "HappyHotel.Core.ValueProcessing.Components.AttackPowerComponent");
+            var money = GetSingleton("HappyHotel.Shop.ShopMoneyManager");
+            var donum = GetSingleton("HappyHotel.Donum.DonumManager");
             var point = GetGridPosition(player);
-            return new { instanceId = "player-main", moveTargetId = MoveTargetId(player), size = GridSize(player), name = "主角", position = new { x = point.x, y = point.y }, currentHp = ReadMember<int>(hp, "CurrentHitPoint"), maxHp = ReadMember<int>(hp, "MaxHitPoint"), currentCost = ReadMember<int>(cost, "CurrentCost"), maxCost = ReadMember<int>(cost, "MaxCost"), blessings = Array.Empty<object>(), buffs = GetBuffs(player) };
+            var blessings = Enumerate(Invoke(donum, "GetAllObjects")).Select(item =>
+            {
+                var definition = ResolveRegistryEntry("HappyHotel.Donum.DonumRegistry", ResolveTypeId(item), "itemNameLocalized");
+                return new { definition.typeId, definition.name, definition.description };
+            }).ToArray();
+            return new { instanceId = "player-main", moveTargetId = MoveTargetId(player), size = GridSize(player), name = "主角", position = new { x = point.x, y = point.y }, currentHp = ReadMember<int>(hp, "CurrentHitPoint"), maxHp = ReadMember<int>(hp, "MaxHitPoint"), currentCost = ReadMember<int>(cost, "CurrentCost"), maxCost = ReadMember<int>(cost, "MaxCost"), shield = ReadMember<int>(armor, "CurrentArmor"), baseAttack = ReadBaseAttack(attack), attack = ReadMember<int>(attack, "AttackPower"), gold = ReadMember<int>(money, "CurrentMoney"), blessings, buffs = GetBuffs(player) };
         }
 
         private object BuildEntity(object target, int index)
@@ -863,7 +957,7 @@ namespace AshesOfPantheon.QA.PackageBridge
             var point = GetGridPosition(target);
             var typeId = ResolveTypeId(target);
             var executor = GetBehaviorComponent(target, "HappyHotel.Intent.Components.TurnEndIntentExecutorComponent");
-            return new { instanceId = $"{typeId}#{index}", moveTargetId = MoveTargetId(target), size = GridSize(target), typeId, name = typeId, kind = "enemy", position = new { x = point.x, y = point.y }, currentHp = ReadMember<int>(hp, "CurrentHitPoint"), maxHp = ReadMember<int>(hp, "MaxHitPoint"), attack = ReadMember<int>(attack, "AttackPower"), buffs = GetBuffs(target), intents = GetIntents(executor), loopStartIndex = executor == null ? -1 : Convert.ToInt32(Invoke(executor, "GetLoopStartIndex")) };
+            return new { instanceId = $"{typeId}#{index}", moveTargetId = MoveTargetId(target), size = GridSize(target), typeId, name = typeId, kind = "enemy", position = new { x = point.x, y = point.y }, currentHp = ReadMember<int>(hp, "CurrentHitPoint"), maxHp = ReadMember<int>(hp, "MaxHitPoint"), baseAttack = ReadBaseAttack(attack), attack = ReadMember<int>(attack, "AttackPower"), buffs = GetBuffs(target), intents = GetIntents(executor), loopStartIndex = executor == null ? -1 : Convert.ToInt32(Invoke(executor, "GetLoopStartIndex")) };
         }
 
         private object[] GetBuffs(object target)
@@ -879,13 +973,19 @@ namespace AshesOfPantheon.QA.PackageBridge
         private object[] GetIntents(object executor)
         {
             if (executor == null) return Array.Empty<object>();
-            return Enumerate(Invoke(executor, "GetSequence")).Select((plan, index) =>
+            var result = new List<object>();
+            var itemIndex = 0;
+            foreach (var group in Enumerate(Invoke(executor, "GetGroupSequence")).Select((value, index) => new { value, index }))
             {
-                var rawTypeId = ReadMember<object>(plan, "TypeId");
-                var typeId = ReadMember<string>(rawTypeId, "Id") ?? rawTypeId?.ToString() ?? "Unknown";
-                var definition = ResolveRegistryEntry("HappyHotel.Intent.IntentRegistry", typeId, "intentNameLocalized");
-                return new { instanceId = $"intent-{index}", typeId, name = definition.name, summary = definition.description, parameters = new Dictionary<string, object>() };
-            }).Cast<object>().ToArray();
+                foreach (var plan in Enumerate(ReadMember<object>(group.value, "Intents")))
+                {
+                    var rawTypeId = ReadMember<object>(plan, "TypeId");
+                    var typeId = ReadMember<string>(rawTypeId, "Id") ?? rawTypeId?.ToString() ?? "Unknown";
+                    var definition = ResolveRegistryEntry("HappyHotel.Intent.IntentRegistry", typeId, "intentNameLocalized");
+                    result.Add(new { instanceId = $"intent-{itemIndex++}", typeId, name = definition.name, summary = definition.description, parameters = ReadSettingParameters(ReadMember<object>(plan, "Setting")), groupIndex = group.index, projectileClassId = ReadMember<string>(plan, "ProjectileClassId") ?? string.Empty });
+                }
+            }
+            return result.ToArray();
         }
 
         private static string ResolveTemplateText(object template, string member, string tableName, string keySuffix, string typeId)
@@ -973,6 +1073,60 @@ namespace AshesOfPantheon.QA.PackageBridge
         {
             var stacks = Invoke(buff, "GetStacks");
             return stacks is int count ? count : 1;
+        }
+
+        private static int ReadBaseAttack(object attack)
+        {
+            return ReadMember<int>(ReadMember<object>(attack, "runAttackValue"), "CurrentValue");
+        }
+
+        private static Dictionary<string, object> ReadSettingParameters(object setting)
+        {
+            var result = new Dictionary<string, object>(StringComparer.Ordinal);
+            if (setting == null) return result;
+            foreach (var property in setting.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance).Where(item => item.CanRead && item.GetIndexParameters().Length == 0))
+            {
+                var value = property.GetValue(setting, null);
+                if (IsEditableSettingValue(value)) result[property.Name] = NormalizeSettingValue(value);
+            }
+            foreach (var field in setting.GetType().GetFields(BindingFlags.Public | BindingFlags.Instance))
+            {
+                var value = field.GetValue(setting);
+                if (IsEditableSettingValue(value)) result[field.Name] = NormalizeSettingValue(value);
+            }
+            return result;
+        }
+
+        private static bool IsEditableSettingValue(object value)
+        {
+            return value != null && (value is string || value is bool || value is byte || value is short || value is int || value is long || value is float || value is double || value.GetType().IsEnum);
+        }
+
+        private static object NormalizeSettingValue(object value)
+        {
+            return value.GetType().IsEnum ? value.ToString() : value;
+        }
+
+        private static object GetRoutePreview()
+        {
+            var manager = GetSingleton("HappyHotel.Prop.RoutePreview.RoutePreviewManager");
+            var result = ReadMember<object>(manager, "LatestResult") ?? ReadMember<object>(manager, "ActiveMovementPresentationRoute");
+            if (result == null) return null;
+            var start = ReadMember<Vector2Int>(result, "StartPosition");
+            var terminal = ReadMember<Vector2Int>(result, "TerminalPosition");
+            return new
+            {
+                startPosition = new { x = start.x, y = start.y },
+                steps = Enumerate(ReadMember<object>(result, "Steps")).Select(step =>
+                {
+                    var point = ReadMember<Vector2Int>(step, "Position");
+                    return new { x = point.x, y = point.y };
+                }).ToArray(),
+                hasLoop = ReadMember<bool>(result, "HasLoop"),
+                hasTerminalPosition = ReadMember<bool>(result, "HasTerminalPosition"),
+                terminalPosition = new { x = terminal.x, y = terminal.y },
+                stopReason = ReadMember<object>(result, "StopReason")?.ToString() ?? string.Empty
+            };
         }
 
         private static string TryResolveEquipmentNameFromCatalog(string source, string tableName)
