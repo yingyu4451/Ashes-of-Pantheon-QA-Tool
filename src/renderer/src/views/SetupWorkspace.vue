@@ -232,8 +232,8 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <section class="h-full min-h-0 overflow-y-auto" aria-labelledby="setup-title">
-    <header class="border-b border-white/9 px-7 py-5">
+  <section class="game-setup h-full min-h-0 overflow-y-auto" aria-labelledby="setup-title">
+    <header class="game-heading border-b border-white/9 px-7 py-5">
       <p class="utility-font m-0 text-[10px] text-[#c6a451]/65">CONNECTIONS</p>
       <h1 id="setup-title" class="display-font m-0 mt-1 text-[26px] text-[#eee7dc]">项目与连接</h1>
     </header>

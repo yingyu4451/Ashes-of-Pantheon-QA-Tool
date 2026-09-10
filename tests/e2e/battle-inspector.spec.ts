@@ -88,7 +88,7 @@ test('player properties and blessings are separate battle tabs, with no player i
   await expect(inspector.getByRole('tab', { name: '属性', exact: true })).toHaveAttribute('aria-selected', 'true')
   await expect(inspector.getByRole('heading', { name: '持有祝福' })).toHaveCount(0)
   await inspector.getByRole('tab', { name: '祝福', exact: true }).click()
-  await expect(inspector.getByRole('tab', { name: '祝福', exact: true })).toHaveCSS('border-bottom-color', 'rgb(196, 69, 54)')
+  await expect(inspector.getByRole('tab', { name: '祝福', exact: true })).toHaveCSS('border-bottom-color', 'rgb(198, 164, 81)')
   await expect(inspector.getByRole('heading', { name: '持有祝福' })).toBeVisible()
   await inspector.getByRole('button', { name: '添加祝福', exact: true }).click()
   await expect(inspector.getByRole('button', { name: '移除 试炼祝福', exact: true })).toBeVisible()

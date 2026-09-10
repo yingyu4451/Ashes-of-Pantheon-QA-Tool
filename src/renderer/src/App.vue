@@ -52,7 +52,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="flex h-screen min-h-0 min-w-0 overflow-hidden bg-[#121112] text-[#e8e2d7]">
+  <div class="ashes-shell flex h-screen min-h-0 min-w-0 overflow-hidden bg-[#121112] text-[#e8e2d7]">
     <a href="#main-workspace" class="skip-link">跳到主工作区</a>
     <AppRail :active="store.activeWorkspace" @select="selectWorkspace" />
 

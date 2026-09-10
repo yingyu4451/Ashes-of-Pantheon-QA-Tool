@@ -3,6 +3,10 @@ import { computed, onBeforeUnmount, ref, useId } from 'vue'
 import { Crosshair, Footprints, PackageOpen, Sparkles, Target } from '@lucide/vue'
 import type { Component, CSSProperties } from 'vue'
 import type { QaCard } from '@shared/contracts'
+import commonFrame from '@/assets/game-ui/card-frame-0.png'
+import tealFrame from '@/assets/game-ui/card-frame-1.png'
+import redFrame from '@/assets/game-ui/card-frame-2.png'
+import silverFrame from '@/assets/game-ui/card-frame-3.png'
 
 const props = defineProps<{
   card: QaCard
@@ -40,16 +44,11 @@ const rarityLabel: Record<QaCard['rarity'], string> = {
   legendary: '传说'
 }
 
-const frameStyle = computed<CSSProperties>(() => {
-  const variant = props.card.frameVariant ?? 0
-  const x = variant % 2 === 0 ? '0%' : '100%'
-  const y = variant < 2 ? '0%' : '100%'
-  return {
-    backgroundImage: 'url(/assets/card-frame.png)',
-    backgroundPosition: `${x} ${y}`,
-    backgroundSize: '200% 200%'
-  }
-})
+const cardFrames = [commonFrame, tealFrame, redFrame, silverFrame]
+const frameStyle = computed<CSSProperties>(() => ({
+  backgroundImage: `url("${cardFrames[props.card.frameVariant ?? 0] ?? commonFrame}")`,
+  backgroundSize: '100% 100%'
+}))
 
 const tooltipStyle = computed<CSSProperties>(() => {
   const top = Math.max(8, Math.min(tooltipPosition.value.y + 18, window.innerHeight - 280))
@@ -117,7 +116,7 @@ onBeforeUnmount(endHover)
   >
     <button
       type="button"
-      class="relative block aspect-[0.72] w-full min-w-0 overflow-hidden border border-black/70 bg-[#242126] text-left shadow-[0_10px_22px_rgb(0_0_0/0.25)] transition-transform duration-150 hover:-translate-y-0.5 focus-visible:-translate-y-0.5 cut-corner"
+      class="game-card relative block aspect-[0.72] w-full min-w-0 overflow-hidden border border-black/70 bg-[#242126] text-left shadow-[0_10px_22px_rgb(0_0_0/0.25)] transition-transform duration-150 hover:-translate-y-0.5 focus-visible:-translate-y-0.5"
       :class="[
         !inventoryAvailable || busy ? 'cursor-default' : 'cursor-pointer active:scale-[0.99]',
         inventoryAvailable && card.category === 'equipment' ? 'hover:shadow-[0_10px_26px_rgb(198_164_81/0.16)]' : ''
@@ -132,11 +131,11 @@ onBeforeUnmount(endHover)
       @keydown.delete.prevent="removeCard"
       @keydown.esc="endHover"
     >
-      <span class="absolute inset-0 bg-no-repeat brightness-[0.68] contrast-[1.08]" :style="frameStyle" aria-hidden="true" />
-      <span class="absolute inset-[11%_14%_16%] overflow-hidden bg-[#17161a] shadow-[inset_0_0_20px_rgb(0_0_0/0.65)]" aria-hidden="true">
-        <img v-if="card.imageUrl" :src="card.imageUrl" alt="" width="320" height="320" loading="lazy" class="h-[58%] w-full object-cover opacity-75" />
+      <span class="game-card-frame absolute inset-0 bg-no-repeat" :style="frameStyle" aria-hidden="true" />
+      <span class="absolute inset-[11%_14%_16%] overflow-hidden" aria-hidden="true">
+        <img v-if="card.imageUrl" :src="card.imageUrl" alt="" width="320" height="320" loading="lazy" class="h-[58%] w-full object-cover opacity-90" />
       </span>
-      <span class="absolute inset-[11%_14%_16%] flex flex-col bg-[#17161a]/55 p-3">
+      <span class="game-card-content absolute inset-[11%_14%_16%] flex flex-col p-3">
         <span class="flex items-start justify-between gap-2">
           <span class="grid h-8 w-8 place-items-center border border-[#c6a451]/42 bg-black/35 text-[#e1be59] cut-corner">
             <component :is="categoryIcon[card.category]" :size="16" aria-hidden="true" />
@@ -170,7 +169,7 @@ onBeforeUnmount(endHover)
     <Teleport to="body">
       <div
         v-if="tooltipVisible"
-        class="pointer-events-none fixed z-50 w-[300px] max-w-[calc(100vw-16px)] overflow-y-auto border border-[#c6a451]/55 bg-[#171318]/98 p-4 shadow-[0_16px_45px_rgb(0_0_0/0.55)] cut-corner"
+        class="game-tooltip pointer-events-none fixed z-50 w-[300px] max-w-[calc(100vw-16px)] overflow-y-auto border border-[#c6a451]/55 bg-[#171318]/98 p-4 shadow-[0_16px_45px_rgb(0_0_0/0.55)] cut-corner"
         :style="tooltipStyle"
         role="tooltip"
         :id="tooltipId"

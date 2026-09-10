@@ -54,8 +54,8 @@ const rarities: Array<{ value: Rarity; label: string }> = [
 </script>
 
 <template>
-  <section class="flex h-full min-h-0 flex-col" aria-labelledby="cards-title">
-    <div class="flex shrink-0 flex-wrap items-end justify-between gap-4 border-b border-white/9 px-6 py-5">
+  <section class="game-catalog flex h-full min-h-0 flex-col" aria-labelledby="cards-title">
+    <div class="game-heading flex shrink-0 flex-wrap items-end justify-between gap-4 border-b border-white/9 px-6 py-5">
       <div>
         <h1 id="cards-title" class="display-font m-0 text-[26px] text-[#eee7dc]">卡牌目录</h1>
       </div>
@@ -89,7 +89,7 @@ const rarities: Array<{ value: Rarity; label: string }> = [
       </div>
     </div>
 
-    <div class="flex shrink-0 flex-wrap items-start gap-x-6 gap-y-3 border-b border-white/8 bg-[#171619] px-6 py-3" role="group" aria-labelledby="card-filter-label">
+    <div class="game-filters flex shrink-0 flex-wrap items-start gap-x-6 gap-y-3 border-b border-white/8 bg-[#171619] px-6 py-3" role="group" aria-labelledby="card-filter-label">
       <span id="card-filter-label" class="flex h-7 items-center text-[12px] font-semibold text-white/65">筛选</span>
       <fieldset class="flex flex-wrap items-center gap-2">
         <legend class="float-left mr-2 text-[11px] font-bold text-white/42">类型</legend>

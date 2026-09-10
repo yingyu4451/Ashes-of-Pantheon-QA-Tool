@@ -15,7 +15,7 @@ const emit = defineEmits<{ openSetup: []; openHelp: []; refresh: [] }>()
 </script>
 
 <template>
-  <header class="flex h-[58px] shrink-0 items-center justify-between gap-4 border-b border-white/10 bg-[#19181b]/96 px-5">
+  <header class="game-connection-bar flex h-[58px] shrink-0 items-center justify-between gap-4 border-b border-white/10 bg-[#19181b]/96 px-5">
     <div class="flex min-w-0 items-center gap-3">
       <button type="button" class="flex min-w-0 items-center gap-2 text-left" @click="emit('openSetup')">
         <span class="status-dot shrink-0" :data-status="status" aria-hidden="true" />

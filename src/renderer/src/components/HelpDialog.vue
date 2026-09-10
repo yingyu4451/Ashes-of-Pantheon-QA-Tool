@@ -16,7 +16,7 @@ onUnmounted(() => { if (dialog.value?.open) dialog.value.close() })
 
 <template>
   <dialog ref="dialog" class="modal" aria-labelledby="help-title" @close="emit('close')" @keydown.stop @click="($event.target === dialog) && close()">
-    <div class="modal-box flex h-[min(740px,calc(100dvh-64px))] w-[min(920px,calc(100vw-48px))] max-w-none flex-col overflow-hidden rounded-md border border-white/15 bg-base-200 p-0">
+    <div class="game-dialog modal-box flex h-[min(740px,calc(100dvh-64px))] w-[min(920px,calc(100vw-48px))] max-w-none flex-col overflow-hidden rounded-md border border-white/15 bg-base-200 p-0">
       <header class="flex shrink-0 items-center justify-between border-b border-white/10 px-6 py-4">
         <h2 id="help-title" class="display-font m-0 text-[20px] text-base-content">使用说明</h2>
         <button type="button" class="btn btn-ghost btn-square btn-sm" title="关闭使用说明" aria-label="关闭使用说明" autofocus @click="close"><X :size="18" aria-hidden="true" /></button>

@@ -7,18 +7,18 @@
   name: "ashes";
   default: true;
   color-scheme: dark;
-  --color-base-100: #121112;
-  --color-base-200: #19181b;
-  --color-base-300: #252327;
-  --color-base-content: #e8e2d7;
-  --color-primary: #c44536;
-  --color-primary-content: #ffffff;
+  --color-base-100: #171619;
+  --color-base-200: #211e20;
+  --color-base-300: #332e2b;
+  --color-base-content: #eee7dc;
+  --color-primary: #a44436;
+  --color-primary-content: #fff5e5;
   --color-secondary: #c6a451;
   --color-secondary-content: #171619;
   --color-accent: #7167a8;
   --color-accent-content: #ffffff;
-  --color-neutral: #252327;
-  --color-neutral-content: #e8e2d7;
+  --color-neutral: #332e2b;
+  --color-neutral-content: #eee7dc;
   --color-info: #72a9cb;
   --color-info-content: #10171b;
   --color-success: #67b49e;
@@ -44,6 +44,7 @@
 }
 
 :root {
+  color-scheme: dark;
   color: #e8e2d7;
   background: #121112;
   font-family: "Microsoft YaHei UI", "Noto Sans SC", sans-serif;
@@ -55,6 +56,11 @@
   --red: #c44536;
   --gold: #c6a451;
   --violet: #7167a8;
+  --game-edge: #77664c;
+  --game-muted: #b9aea0;
+  --game-button: url("./assets/game-ui/button-stone.png");
+  --game-gold-frame: url("./assets/game-ui/frame-gold.png");
+  --game-stone-frame: url("./assets/game-ui/frame-stone.png");
 }
 
 * {
@@ -121,6 +127,7 @@ select:focus-visible,
 
 .display-font {
   font-family: "Ashes Display", "Microsoft YaHei UI", sans-serif;
+  text-shadow: 0 2px 1px #090808;
 }
 
 .utility-font {
@@ -173,9 +180,172 @@ h2 {
 }
 
 .btn-sm, .input-sm, .select-sm { --size: 36px; }
-.btn { letter-spacing: 0; }
+.btn {
+  letter-spacing: 0;
+  border-radius: 2px;
+  text-shadow: 0 1px 1px #100c0b;
+  transition-property: color, background-color, border-color, box-shadow, opacity;
+}
+.btn-neutral {
+  border-color: #655b4b;
+  border-image: var(--game-button) 18 fill / 6px;
+  color: #eee7dc;
+  background-color: #332e2b;
+}
+.btn-square.btn-neutral {
+  border-image: var(--game-stone-frame) 60 / 4px;
+}
+.btn-primary {
+  border-color: #c6a451;
+  border-image: var(--game-gold-frame) 85 120 95 110 / 5px;
+  background-image: linear-gradient(180deg, #a94d3f, #7e3028);
+  color: #fff5e5;
+  box-shadow: 0 2px 3px #090808;
+}
+.btn:not(:disabled, [aria-disabled="true"]):hover {
+  color: #fff5e5;
+  box-shadow: inset 0 0 0 1px #d7bb79, 0 0 0 1px #d7bb7940;
+}
+.btn-primary:not(:disabled):hover {
+  background-image: linear-gradient(180deg, #bd5b49, #913c30);
+}
+.btn:not(:disabled, [aria-disabled="true"]):active {
+  box-shadow: inset 0 2px 5px #090808, inset 0 0 0 1px #e4c780;
+}
+.btn:disabled, .btn[aria-disabled="true"] {
+  border-image: none;
+  border-color: #49423b;
+  color: #a2978a;
+  background: #292522;
+  box-shadow: none;
+  text-shadow: none;
+  opacity: 0.65;
+}
 .input, .select { min-width: 0; }
+.input, .select {
+  border-color: #655b4b;
+  border-radius: 2px;
+  color: #eee7dc;
+  background-color: #151416;
+  box-shadow: inset 0 2px 4px #0005, 0 1px 0 #ead1a00d;
+}
+.input::placeholder { color: #a69b8d; }
+.input:not(:disabled):hover, .select:not(:disabled):hover { border-color: #ac9263; }
+.input:disabled, .select:disabled { color: #a2978a; background-color: #292522; border-color: #49423b; }
 .input:focus, .select:focus { outline-color: var(--color-secondary); }
+.select option { color: #eee7dc; background: #211e20; }
+
+/* Original Unity sprites provide the material; these rules do not set layout. */
+.ashes-shell {
+  background: #171619;
+  color: #eee7dc;
+}
+.game-rail {
+  border-color: #726046;
+  background: linear-gradient(90deg, #181617, #26211f 75%, #171516);
+  box-shadow: inset -3px 0 0 #080707, 3px 0 8px #0004;
+}
+.game-connection-bar {
+  border-color: #726046;
+  background: linear-gradient(180deg, #322b26, #211e20);
+  box-shadow: inset 0 -2px 0 #0c0a09;
+}
+.game-nav-button {
+  border-image: url("./assets/game-ui/nav-stone.png") 32 fill / 6px;
+  color: #b9aea0;
+  text-shadow: 0 1px 2px #000;
+}
+.game-nav-button:hover, .game-nav-button:focus-visible {
+  color: #fff0cb;
+  box-shadow: inset 0 0 0 1px #c6a451;
+}
+.game-nav-button[aria-current="page"] {
+  border-image-source: url("./assets/game-ui/nav-selected.png");
+  color: #f2d18b;
+}
+.game-nav-button:active { filter: brightness(1.2); }
+.game-panel {
+  border-color: #756248;
+  background-color: #211e20;
+  background-image: url("./assets/game-ui/panel-stone.png");
+  background-size: 100% 100%;
+  box-shadow: inset 0 0 24px #0004;
+}
+/* Utility text retains its existing size while gaining contrast on game art. */
+.ashes-shell :is(.text-white\/25, .text-white\/28, .text-white\/30, .text-white\/32, .text-white\/34, .text-white\/36, .text-white\/38, .text-white\/40, .text-white\/42, .text-white\/43, .text-white\/45, .text-white\/48, .text-white\/50) {
+  color: #b9aea0;
+}
+.game-heading {
+  border-color: #726046;
+  background: linear-gradient(180deg, #342e29e6, #201c1de6);
+  box-shadow: inset 0 -3px 0 #080707, inset 0 -4px 0 #a68b4945;
+}
+.game-heading .display-font { color: #f0dfb7; }
+.game-panel label, .game-panel dt { color: #b9aea0; }
+.game-panel output { border-color: #655b4b; background: #151416; }
+.game-entity-row { border-radius: 2px; }
+.game-entity-row:hover { background-color: #ad8e4920; }
+.game-entity-row[data-selected="true"] {
+  border-image: var(--game-gold-frame) 85 120 95 110 / 5px;
+  background-color: #74603a30;
+}
+.game-panel .tab { color: #b9aea0; }
+.game-panel .tab[aria-selected="true"] {
+  color: #f0dfb7;
+  border-bottom-color: #c6a451;
+  background: #c6a45114;
+}
+.game-map-surround, .game-catalog, .game-setup {
+  background-color: #1d1b1d;
+  background-image: linear-gradient(#181619cc, #181619e8), url("./assets/game-ui/stone-surface.png");
+  background-size: cover;
+}
+.game-board {
+  border-color: #a58a54;
+  background-color: #63513c;
+}
+.game-board-surface {
+  background: linear-gradient(#967a4840, #59452b30), url("./assets/game-ui/stone-surface.png") center / cover;
+}
+.game-board [data-testid="battle-grid"], .game-board [data-battle-cell] { border-color: #211c1b70; }
+.game-board [data-battle-cell] > button:hover { background: #f3dca317; }
+.game-board [data-battle-cell] > button:focus-visible { outline-offset: -3px; }
+.game-board [data-battle-cell] > .utility-font { color: #dfcfad; text-shadow: 0 1px 2px #1b1613; }
+.game-filters { background: #211e20; border-color: #72604680; }
+.game-filters label { border-color: #6a5c48; color: #d0c4b1; background-color: #171619; }
+.game-filters label:hover:not(:has(:disabled)) { border-color: #cfb16d; }
+.game-filters label:has(:focus-visible) { outline: 2px solid #e2c168; outline-offset: 2px; }
+.game-filters label:has(:checked) { border-color: #c6a451; background-color: #574529; color: #fff0cb; }
+.game-filters label:has(:disabled) { opacity: 0.55; }
+.game-card {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  filter: drop-shadow(0 5px 4px #0007);
+}
+.game-card-content {
+  background: linear-gradient(180deg, #17161915, #17161945 38%, #171619eb);
+  text-shadow: 0 1px 2px #080707;
+}
+.game-card-frame {
+  clip-path: polygon(50% 0, 84% 10%, 100% 22%, 100% 96%, 94% 100%, 6% 100%, 0 96%, 0 22%, 16% 10%);
+}
+.game-card[aria-disabled="true"] { cursor: default; }
+.game-card:focus-visible { outline-offset: -2px; }
+.game-setup section[aria-labelledby] { border-color: #75624880; }
+.game-setup section[aria-labelledby] h2 { color: #dfc594; }
+.game-setup [role="status"], .game-setup .border-dashed {
+  border-color: #726046;
+  background-color: #17161980;
+}
+.game-dialog, .game-tooltip {
+  border-color: #ad8e49;
+  border-image: var(--game-gold-frame) 85 120 95 110 / 7px;
+  background: #211e20;
+}
+.game-dialog > header { background: #312a24; border-color: #726046; }
+.game-tooltip { clip-path: none; }
+.game-notice { background: #211e20; box-shadow: inset 0 0 0 2px #080707, 0 12px 32px #0008; }
 
 .status-dot {
   width: 8px;

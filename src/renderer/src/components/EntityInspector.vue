@@ -182,9 +182,9 @@ async function applyIntentSequence(): Promise<void> {
 </script>
 
 <template>
-  <aside class="flex h-full min-h-0 min-w-0 flex-col border-l border-white/10 bg-[#19181b]" aria-label="对象检查器">
+  <aside class="game-panel flex h-full min-h-0 min-w-0 flex-col border-l border-white/10 bg-[#19181b]" aria-label="对象检查器">
     <template v-if="entity">
-      <div class="shrink-0 border-b border-white/9 px-4 pb-4 pt-5">
+      <div class="game-heading shrink-0 border-b border-white/9 px-4 pb-4 pt-5">
         <div class="flex items-start justify-between gap-3">
           <div class="min-w-0">
             <p class="utility-font m-0 truncate text-[10px] text-[#c6a451]/60">{{ entity.typeId }}</p>

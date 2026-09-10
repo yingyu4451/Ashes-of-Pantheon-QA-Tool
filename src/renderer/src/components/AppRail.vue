@@ -15,7 +15,7 @@ const items: Array<{ id: WorkspaceId; label: string; icon: Component }> = [
 </script>
 
 <template>
-  <nav class="flex h-full w-[86px] shrink-0 flex-col border-r border-white/10 bg-[#171619] max-[640px]:fixed max-[640px]:inset-x-0 max-[640px]:bottom-0 max-[640px]:z-[60] max-[640px]:h-[64px] max-[640px]:w-full max-[640px]:flex-row max-[640px]:border-r-0 max-[640px]:border-t" aria-label="主导航">
+  <nav class="game-rail flex h-full w-[86px] shrink-0 flex-col border-r border-white/10 bg-[#171619] max-[640px]:fixed max-[640px]:inset-x-0 max-[640px]:bottom-0 max-[640px]:z-[60] max-[640px]:h-[64px] max-[640px]:w-full max-[640px]:flex-row max-[640px]:border-r-0 max-[640px]:border-t" aria-label="主导航">
     <div class="flex h-[78px] items-center justify-center border-b border-white/8 max-[640px]:hidden">
       <img :src="logoUrl" alt="Ashes of Pantheon QA Tool" width="48" height="48" class="h-12 w-12 shrink-0 object-contain" draggable="false" fetchpriority="high" />
     </div>
@@ -25,7 +25,7 @@ const items: Array<{ id: WorkspaceId; label: string; icon: Component }> = [
         v-for="item in items"
         :key="item.id"
         type="button"
-        class="group relative flex h-[62px] flex-col items-center justify-center gap-1 border border-transparent text-[12px] text-white/48 transition-colors hover:bg-white/4 hover:text-white/80 max-[640px]:h-full max-[640px]:flex-1"
+        class="game-nav-button group relative flex h-[62px] flex-col items-center justify-center gap-1 border border-transparent text-[12px] text-white/48 transition-colors hover:bg-white/4 hover:text-white/80 max-[640px]:h-full max-[640px]:flex-1"
         :class="active === item.id ? 'border-[#c6a451]/28 bg-[#c6a451]/8 text-[#efd47a]' : ''"
         :aria-current="active === item.id ? 'page' : undefined"
         @click="emit('select', item.id)"
@@ -36,6 +36,6 @@ const items: Array<{ id: WorkspaceId; label: string; icon: Component }> = [
       </button>
     </div>
 
-    <div class="border-t border-white/8 px-2 py-3 text-center utility-font text-[9px] text-white/25 max-[640px]:hidden">QA 0.1.14</div>
+    <div class="border-t border-white/8 px-2 py-3 text-center utility-font text-[9px] text-white/25 max-[640px]:hidden">QA 0.1.15</div>
   </nav>
 </template>

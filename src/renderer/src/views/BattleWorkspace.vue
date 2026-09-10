@@ -281,8 +281,8 @@ async function removeEquipment(entity: QaEntity): Promise<void> {
 
   <section v-else class="battle-workspace" :class="moving ? 'select-none' : ''" aria-labelledby="battle-title">
     <h1 id="battle-title" class="sr-only">战斗工作台</h1>
-    <aside class="flex min-h-0 min-w-0 flex-col border-r border-white/10 bg-[#171619]" aria-label="场上对象">
-      <div class="shrink-0 border-b border-white/9 px-4 py-5">
+    <aside class="game-panel flex min-h-0 min-w-0 flex-col border-r border-white/10 bg-[#171619]" aria-label="场上对象">
+      <div class="game-heading shrink-0 border-b border-white/9 px-4 py-5">
         <p class="display-font m-0 text-[23px] text-[#eee7dc]" aria-hidden="true">战斗工作台</p>
       </div>
 
@@ -290,7 +290,8 @@ async function removeEquipment(entity: QaEntity): Promise<void> {
         <div
           v-for="entity in allEntities"
           :key="entity.instanceId"
-          class="mb-1 flex min-h-[64px] w-full items-stretch border border-transparent hover:bg-white/4"
+          class="game-entity-row mb-1 flex min-h-[64px] w-full items-stretch border border-transparent hover:bg-white/4"
+          :data-selected="store.selectedEntityId === entity.instanceId"
           :class="store.selectedEntityId === entity.instanceId ? 'border-[#c6a451]/28 bg-[#c6a451]/8' : ''"
         >
           <button
@@ -336,8 +337,8 @@ async function removeEquipment(entity: QaEntity): Promise<void> {
       </div>
     </aside>
 
-    <section class="relative flex min-h-0 min-w-0 flex-col overflow-hidden bg-[#131215]" aria-labelledby="battle-map-title">
-      <div class="flex min-h-16 shrink-0 flex-wrap items-center justify-between gap-2 border-b border-white/8 px-4 py-2 text-[10px] text-white/50">
+    <section class="game-map-surround relative flex min-h-0 min-w-0 flex-col overflow-hidden bg-[#131215]" aria-labelledby="battle-map-title">
+      <div class="game-heading flex min-h-16 shrink-0 flex-wrap items-center justify-between gap-2 border-b border-white/8 px-4 py-2 text-[10px] text-white/50">
         <div class="min-w-0">
           <h2 id="battle-map-title" class="m-0 text-[14px] font-bold text-white/80">战斗地图</h2>
           <p class="utility-font m-0 mt-1 truncate">{{ store.battle.mapName }} · {{ store.battle.width }}×{{ store.battle.height }}</p>
@@ -355,8 +356,8 @@ async function removeEquipment(entity: QaEntity): Promise<void> {
       </div>
 
       <div ref="gridViewport" class="flex min-h-0 flex-1 items-center justify-center overflow-auto p-5">
-        <div class="relative shrink-0 border border-[#c6a451]/28 bg-[#7b5e36] p-2 shadow-[0_24px_80px_rgb(0_0_0/0.38)] cut-corner">
-          <div class="absolute inset-0 opacity-35 [background-image:radial-gradient(circle_at_30%_20%,#d4a95f_0,transparent_34%),linear-gradient(125deg,transparent_0_47%,rgb(40_24_24/.28)_48%_52%,transparent_53%)]" aria-hidden="true" />
+        <div class="game-board relative shrink-0 border border-[#c6a451]/28 bg-[#7b5e36] p-2 shadow-[0_24px_80px_rgb(0_0_0/0.38)] cut-corner">
+          <div class="game-board-surface absolute inset-0" aria-hidden="true" />
           <div
             data-testid="battle-grid"
             class="relative grid border-l border-t border-[#2f2019]/55"

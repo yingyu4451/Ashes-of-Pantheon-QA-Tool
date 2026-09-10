@@ -9,7 +9,7 @@ const store = useQaStore()
   <Transition name="notice">
     <div
       v-if="store.notice"
-      class="alert fixed bottom-5 right-5 z-[70] flex w-[min(380px,calc(100vw-40px))] items-start gap-3 border bg-[#1c191d]/98 p-4 shadow-[0_18px_55px_rgb(0_0_0/0.55)] cut-corner max-[640px]:bottom-[76px]"
+      class="game-notice alert fixed bottom-5 right-5 z-[70] flex w-[min(380px,calc(100vw-40px))] items-start gap-3 border bg-[#1c191d]/98 p-4 shadow-[0_18px_55px_rgb(0_0_0/0.55)] cut-corner max-[640px]:bottom-[76px]"
       :class="store.notice.tone === 'error' ? 'border-[#c44536]/70' : store.notice.tone === 'success' ? 'border-[#4d9e89]/70' : 'border-[#c6a451]/55'"
       role="status"
       aria-live="polite"
