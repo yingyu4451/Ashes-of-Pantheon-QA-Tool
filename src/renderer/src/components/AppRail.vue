@@ -2,9 +2,11 @@
 import { BookOpen, Boxes, Settings } from '@lucide/vue'
 import type { Component } from 'vue'
 import type { WorkspaceId } from '@shared/contracts'
+import { useQaStore } from '@/stores/qa'
 
 defineProps<{ active: WorkspaceId }>()
 const emit = defineEmits<{ select: [workspace: WorkspaceId] }>()
+const store = useQaStore()
 const logoUrl = `${import.meta.env.BASE_URL}assets/qa-logo.png`
 
 const items: Array<{ id: WorkspaceId; label: string; icon: Component }> = [
@@ -36,6 +38,6 @@ const items: Array<{ id: WorkspaceId; label: string; icon: Component }> = [
       </button>
     </div>
 
-    <div class="border-t border-white/8 px-2 py-3 text-center utility-font text-[9px] text-white/25 max-[640px]:hidden">QA 0.1.15</div>
+    <div class="border-t border-white/8 px-2 py-3 text-center utility-font text-[9px] text-white/25 max-[640px]:hidden">QA {{ store.updateStatus.currentVersion }}</div>
   </nav>
 </template>
