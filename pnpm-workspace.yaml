@@ -3,3 +3,6 @@ allowBuilds:
   electron: true
   electron-winstaller: true
   esbuild: true
+minimumReleaseAgeExclude:
+  - '@lucide/vue@1.60.0'
+  - electron@44.9.2
