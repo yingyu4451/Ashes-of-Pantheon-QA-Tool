@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { Box, Cable, Crosshair, Move, PackageOpen, RefreshCw, Shield, Skull, Trash2, UserRound, X } from '@lucide/vue'
+import { Box, Cable, Crosshair, Move, PackageOpen, RefreshCw, Trash2, X } from '@lucide/vue'
 import EntityInspector from '@/components/EntityInspector.vue'
+import EntitySprite from '@/components/EntitySprite.vue'
 import EquipmentPicker from '@/components/EquipmentPicker.vue'
 import { useQaStore } from '@/stores/qa'
 import type { GridPoint, QaEntity } from '@shared/contracts'
@@ -304,9 +305,7 @@ async function removeEquipment(entity: QaEntity): Promise<void> {
               class="grid h-8 w-8 shrink-0 place-items-center border"
               :class="entity.kind === 'player' ? 'border-[#d6b85e]/55 bg-[#d6b85e]/10 text-[#f1d77e]' : entity.kind === 'enemy' ? 'border-[#c44536]/55 bg-[#c44536]/11 text-[#e86857]' : 'border-[#7167a8]/55 bg-[#7167a8]/12 text-[#b4aae4]'"
             >
-              <UserRound v-if="entity.kind === 'player'" :size="15" aria-hidden="true" />
-              <Skull v-else-if="entity.kind === 'enemy'" :size="15" aria-hidden="true" />
-              <PackageOpen v-else :size="15" aria-hidden="true" />
+              <EntitySprite class="p-[3px]" :entity="entity" :catalog="store.catalog" :icon-size="15" :fallback-icon="entity.kind === 'equipment' ? PackageOpen : undefined" />
             </span>
             <span class="min-w-0 flex-1">
               <span class="block truncate text-[12px] font-semibold text-white/72">{{ entity.name }}</span>
@@ -406,9 +405,7 @@ async function removeEquipment(entity: QaEntity): Promise<void> {
                   @contextmenu.prevent="cancelMove"
                   @click="selectMapEntity(entity)"
                 >
-                  <UserRound v-if="entity.kind === 'player'" :size="18" aria-hidden="true" />
-                  <Skull v-else-if="entity.kind === 'enemy'" :size="18" aria-hidden="true" />
-                  <Shield v-else :size="17" aria-hidden="true" />
+                  <EntitySprite class="p-0.5" :entity="entity" :catalog="store.catalog" :icon-size="entity.kind === 'equipment' ? 17 : 18" />
                   <span v-if="moving?.phase === 'holding' && moving.entity.moveTargetId === entity.moveTargetId" class="pointer-events-none absolute -top-7 left-1/2 z-40 h-5 w-14 -translate-x-1/2 overflow-hidden rounded-sm border border-secondary bg-base-200" role="progressbar" aria-label="长按移动进度" aria-valuemin="0" aria-valuemax="100" :aria-valuenow="holdProgress">
                     <span class="absolute bottom-0 left-0 h-1 w-full origin-left bg-secondary" :style="{ transform: `scaleX(${holdProgress / 100})` }" />
                     <span class="utility-font relative block text-center text-[10px] leading-4 text-secondary">{{ holdProgress }}%</span>

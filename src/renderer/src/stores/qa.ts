@@ -17,6 +17,7 @@ import type {
   WorkspaceId
 } from '@shared/contracts'
 import { demoBattle, demoCatalog } from '@/data/demo'
+import { isUpgradedCard } from '@shared/catalog'
 
 const clone = <T>(value: T): T => structuredClone(value)
 type NoticeTone = 'info' | 'loading' | 'success' | 'error'
@@ -35,7 +36,7 @@ export const useQaStore = defineStore('qa', () => {
   const gameBuildPath = ref('')
   const updateStatus = ref<UpdateStatus>({
     phase: nativeMode ? 'idle' : 'disabled',
-    currentVersion: '0.1.15',
+    currentVersion: '0.1.16',
     message: nativeMode ? '尚未检查更新。' : '开发模式不检查更新。'
   })
   const runtimeReady = ref(!nativeMode)
@@ -57,6 +58,7 @@ export const useQaStore = defineStore('qa', () => {
   const selectedCosts = ref<number[]>([])
   const selectedRarities = ref<Rarity[]>([])
   const selectedOwnedOnly = ref(false)
+  const showUpgradedOnly = ref(false)
   const sortKey = ref<'typeId' | 'category' | 'cost' | 'rarity'>('category')
   const sortDirection = ref<'asc' | 'desc'>('asc')
   let connectionMonitor: ReturnType<typeof setInterval> | undefined
@@ -95,7 +97,8 @@ export const useQaStore = defineStore('qa', () => {
       const matchesCost = selectedCosts.value.length === 0 || selectedCosts.value.includes(card.cost)
       const matchesRarity = selectedRarities.value.length === 0 || selectedRarities.value.includes(card.rarity)
       const matchesOwned = !selectedOwnedOnly.value || (ownedCardCounts.value[card.typeId] ?? 0) > 0
-      return matchesSearch && matchesCategory && matchesCost && matchesRarity && matchesOwned
+      const matchesVersion = isUpgradedCard(card.typeId) === showUpgradedOnly.value
+      return matchesSearch && matchesCategory && matchesCost && matchesRarity && matchesOwned && matchesVersion
     })
     const multiplier = sortDirection.value === 'asc' ? 1 : -1
     return cards.sort((left, right) => {
@@ -106,7 +109,14 @@ export const useQaStore = defineStore('qa', () => {
     })
   })
 
-  const activeFilterCount = computed(() => selectedCategories.value.length + selectedCosts.value.length + selectedRarities.value.length + (selectedOwnedOnly.value ? 1 : 0))
+  const activeFilterCount = computed(
+    () =>
+      selectedCategories.value.length +
+      selectedCosts.value.length +
+      selectedRarities.value.length +
+      (selectedOwnedOnly.value ? 1 : 0) +
+      (showUpgradedOnly.value ? 1 : 0)
+  )
 
   function reconcileSelection(current: string, entries: Array<{ typeId: string }>): string {
     return entries.some((entry) => entry.typeId === current) ? current : (entries[0]?.typeId ?? '')
@@ -168,6 +178,7 @@ export const useQaStore = defineStore('qa', () => {
     selectedCosts.value = []
     selectedRarities.value = []
     selectedOwnedOnly.value = false
+    showUpgradedOnly.value = false
   }
 
   function selectEntity(entityId: string): void {
@@ -629,6 +640,7 @@ export const useQaStore = defineStore('qa', () => {
     selectedCosts,
     selectedRarities,
     selectedOwnedOnly,
+    showUpgradedOnly,
     sortKey,
     sortDirection,
     filteredCards,

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { ArrowDown, ArrowUp, Plus, RefreshCw, RotateCcw, Save, ShieldCheck, Trash2 } from '@lucide/vue'
+import EntitySprite from '@/components/EntitySprite.vue'
 import { useQaStore } from '@/stores/qa'
 import type { QaBuff, QaEntity, QaIntentStep } from '@shared/contracts'
 
@@ -186,11 +187,19 @@ async function applyIntentSequence(): Promise<void> {
     <template v-if="entity">
       <div class="game-heading shrink-0 border-b border-white/9 px-4 pb-4 pt-5">
         <div class="flex items-start justify-between gap-3">
-          <div class="min-w-0">
-            <p class="utility-font m-0 truncate text-[10px] text-[#c6a451]/60">{{ entity.typeId }}</p>
-            <h2 class="display-font m-0 mt-1 truncate text-[21px] text-[#eee7dc]">{{ entity.name }}</h2>
+          <div class="flex min-w-0 items-center gap-3">
+            <span
+              class="grid h-11 w-11 shrink-0 place-items-center border"
+              :class="entity.kind === 'player' ? 'border-[#d6b85e]/55 bg-[#d6b85e]/10 text-[#f1d77e]' : entity.kind === 'enemy' ? 'border-[#c44536]/55 bg-[#c44536]/11 text-[#e86857]' : 'border-[#7167a8]/55 bg-[#7167a8]/12 text-[#b4aae4]'"
+            >
+              <EntitySprite class="p-1" :entity="entity" :catalog="store.catalog" :icon-size="18" />
+            </span>
+            <div class="min-w-0">
+              <p class="utility-font m-0 truncate text-[10px] text-[#c6a451]/60">{{ entity.typeId }}</p>
+              <h2 class="display-font m-0 mt-1 truncate text-[21px] text-[#eee7dc]">{{ entity.name }}</h2>
+            </div>
           </div>
-          <span class="border border-white/12 px-2 py-1 text-[10px] text-white/45">
+          <span class="shrink-0 border border-white/12 px-2 py-1 text-[10px] text-white/45">
             {{ entity.position.x }}, {{ entity.position.y }}
           </span>
         </div>

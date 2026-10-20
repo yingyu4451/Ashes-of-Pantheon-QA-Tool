@@ -62,6 +62,28 @@ describe('QA store', () => {
     expect(await store.placeEquipment()).toBe(false)
   })
 
+  it('shows base cards by default and switches to the upgraded variants', () => {
+    const store = useQaStore()
+    const template = store.catalog.cards[0]!
+    store.catalog.cards = [
+      { ...template, typeId: 'Card01', name: '旋风斩' },
+      { ...template, typeId: 'Card01Plus', name: '旋风斩+' },
+      { ...template, typeId: 'Enemy27SummonCard', name: '召唤' }
+    ]
+
+    expect(store.showUpgradedOnly).toBe(false)
+    expect(store.filteredCards.map((card) => card.typeId)).toEqual(['Card01', 'Enemy27SummonCard'])
+    expect(store.activeFilterCount).toBe(0)
+
+    store.showUpgradedOnly = true
+    expect(store.filteredCards.map((card) => card.typeId)).toEqual(['Card01Plus'])
+    expect(store.activeFilterCount).toBe(1)
+
+    store.clearFilters()
+    expect(store.showUpgradedOnly).toBe(false)
+    expect(store.filteredCards.map((card) => card.typeId)).toEqual(['Card01', 'Enemy27SummonCard'])
+  })
+
   it('reconciles catalog selections after an asynchronous catalog update', async () => {
     const store = useQaStore()
     store.selectedEquipmentTypeId = 'MissingEquipment'

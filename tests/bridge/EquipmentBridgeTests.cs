@@ -19,6 +19,9 @@ internal static class EquipmentBridgeTests
                 var catalog = JObject.FromObject(adapter.GetType().GetMethod("GetCatalog").Invoke(adapter, null));
                 Check(catalog["equipment"][0]["name"].Value<string>() == "真实中文长剑", adapter.GetType().Namespace + ": explicit Chinese locale must beat English current locale");
                 Check(catalog["equipment"][1]["name"].Value<string>() == "第十八军团臂章", "Blank references must recover real registered table keys");
+                Check(catalog["equipment"].All(item => item["iconUrl"] != null), adapter.GetType().Namespace + ": every equipment entry must carry an iconUrl property");
+                Check(catalog["enemies"] != null && catalog["enemies"].Type == JTokenType.Array, adapter.GetType().Namespace + ": catalog must expose an enemies array");
+                Check(catalog["enemies"].All(item => item["typeId"] != null && item["iconUrl"] != null), adapter.GetType().Namespace + ": every enemy entry must carry typeId and iconUrl properties");
                 Check(HappyHotel.Card.CardRegistry.Instance.Entries[0].template.itemNameLocalized.LocaleOverride == null, "Do not mutate the game template locale");
             }
             if (args.Contains("battle"))
@@ -59,14 +62,18 @@ namespace UnityEngine
     public struct Vector2Int { public int x, y; public Vector2Int(int x, int y) { this.x=x; this.y=y; } public static Vector2Int zero => new Vector2Int(); }
     public struct Vector2 { public Vector2(float x, float y) {} }
     public struct Rect { public float x,y,width,height; public Rect(float x,float y,float width,float height) { this.x=x; this.y=y; this.width=width; this.height=height; } }
+    public struct Color32 { public byte r, g, b, a; }
     public class Texture : Object { public int width, height; }
+    public class Material : Object { public Texture mainTexture; }
+    public class TextAsset : Object { public string text; }
     public class Sprite : Object { public Texture texture; public Rect rect; }
-    public class Texture2D : Texture { public Texture2D(int w,int h,TextureFormat f,bool m) {} public void ReadPixels(Rect r,int x,int y) {} public void Apply() {} public byte[] EncodeToPNG() => new byte[0]; }
+    public class GameObject : Object { public T[] GetComponentsInChildren<T>(bool includeInactive) where T : Component => new T[0]; public Component[] GetComponentsInChildren(Type type, bool includeInactive) => new Component[0]; }
+    public class Texture2D : Texture { public Texture2D(int w,int h,TextureFormat f,bool m) { width=w; height=h; } public void ReadPixels(Rect r,int x,int y) {} public void Apply() {} public byte[] EncodeToPNG() => new byte[0]; public Color32[] GetPixels32() => new Color32[width*height]; public void SetPixels32(Color32[] pixels) {} }
     public enum TextureFormat { RGBA32 }
     public enum RenderTextureFormat { ARGB32 }
     public class RenderTexture : Texture { public static RenderTexture active; public static RenderTexture GetTemporary(int w,int h,int d,RenderTextureFormat f)=>new RenderTexture(); public static void ReleaseTemporary(RenderTexture t) {} }
-    public static class Graphics { public static void Blit(Texture s,RenderTexture t,Vector2 a,Vector2 b) {} }
-    public static class Mathf { public static float Min(float a,float b)=>Math.Min(a,b); public static float Max(float a,float b)=>Math.Max(a,b); public static int Max(int a,int b)=>Math.Max(a,b); public static int RoundToInt(float f)=>(int)f; }
+    public static class Graphics { public static void Blit(Texture s,RenderTexture t) {} public static void Blit(Texture s,RenderTexture t,Vector2 a,Vector2 b) {} }
+    public static class Mathf { public static float Min(float a,float b)=>Math.Min(a,b); public static float Max(float a,float b)=>Math.Max(a,b); public static int Min(int a,int b)=>Math.Min(a,b); public static int Max(int a,int b)=>Math.Max(a,b); public static float Abs(float v)=>Math.Abs(v); public static int RoundToInt(float f)=>(int)f; }
     public static class Debug { public static void Log(object o) {} public static void LogWarning(object o) {} }
     public static class Application { public static string version="1", unityVersion="test", productName="test"; public static event Action quitting; }
 }

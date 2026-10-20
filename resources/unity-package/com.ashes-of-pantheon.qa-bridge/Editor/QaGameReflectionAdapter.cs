@@ -40,7 +40,8 @@ namespace AshesOfPantheon.QA.EditorBridge
             return new
             {
                 cards,
-                equipment = cards.Where(card => string.Equals(card.category, "equipment", StringComparison.Ordinal)).Select(card => new { card.typeId, card.name }).ToList(),
+                equipment = GetEquipmentCatalogEntries(),
+                enemies = GetEnemyCatalogEntries(),
                 buffs = GetRegistryEntries("HappyHotel.Buff.BuffRegistry", "buffNameLocalized").Select(entry => new { typeId = entry.typeId, name = entry.name, description = entry.description, supportsStacks = true, supportsDuration = true }).ToList(),
                 blessings = GetRegistryEntries("HappyHotel.Donum.DonumRegistry", "itemNameLocalized").Select(entry => new { typeId = entry.typeId, name = entry.name, description = entry.description }).ToList(),
                 intents = GetRegistryEntries("HappyHotel.Intent.IntentRegistry", "intentNameLocalized").Select(entry => new { typeId = entry.typeId, name = entry.name, description = entry.description, parameters = Array.Empty<string>() }).ToList()
@@ -1236,6 +1237,821 @@ namespace AshesOfPantheon.QA.EditorBridge
             var value = property != null ? property.GetValue(target) : type.GetField(name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)?.GetValue(target);
             if (value is T typed) return typed;
             return default;
+        }
+
+        // ---- Catalog icon export (equipment sprites + Spine composed enemy portraits) ----
+        private const int EquipmentIconMaxEdge = 128;
+        private const int EnemyIconMaxEdge = 128;
+        private const float DegreesToRadians = 0.0174532924f;
+        private static readonly Dictionary<string, string> IconCache = new Dictionary<string, string>(StringComparer.Ordinal);
+        private static readonly Dictionary<object, string> SkeletonIconCache = new Dictionary<object, string>();
+        private static readonly Dictionary<Texture2D, Color32[]> TexturePixelCache = new Dictionary<Texture2D, Color32[]>();
+
+        private struct IconMatrix
+        {
+            public float a;
+            public float b;
+            public float c;
+            public float d;
+            public float tx;
+            public float ty;
+        }
+
+        private struct IconBoneDefinition
+        {
+            public string parent;
+            public float x;
+            public float y;
+            public float rotation;
+            public float scaleX;
+            public float scaleY;
+        }
+
+        private sealed class IconRegionMap
+        {
+            public float u;
+            public float u2;
+            public float v;
+            public float v2;
+            public bool vFromBottom;
+            public bool valid;
+
+            public float SampleU(float localU)
+            {
+                return u + localU * (u2 - u);
+            }
+
+            public float SampleV(float localV)
+            {
+                if (vFromBottom) return v + localV * (v2 - v);
+                return 1f - (v + (1f - localV) * (v2 - v));
+            }
+        }
+
+        private sealed class IconTriangle
+        {
+            public float ax;
+            public float ay;
+            public float bx;
+            public float by;
+            public float cx;
+            public float cy;
+            public float au;
+            public float av;
+            public float bu;
+            public float bv;
+            public float cu;
+            public float cv;
+            public int page;
+        }
+
+        private sealed class EquipmentDto
+        {
+            public string typeId;
+            public string name;
+            public string iconUrl;
+        }
+
+        private sealed class EnemyDto
+        {
+            public string typeId;
+            public string name;
+            public string iconUrl;
+        }
+
+        private List<EquipmentDto> GetEquipmentCatalogEntries()
+        {
+            var entries = new List<EquipmentDto>();
+            try
+            {
+                var registry = GetSingleton("HappyHotel.Card.CardRegistry");
+                if (registry == null) return entries;
+                Invoke(registry, "Initialize");
+                foreach (var entry in Enumerate(Invoke(registry, "GetAllIndexEntries")))
+                {
+                    var typeId = ReadMember<string>(entry, "TypeId");
+                    if (string.IsNullOrWhiteSpace(typeId)) continue;
+                    var template = ReadMember<object>(entry, "TemplateObject") ?? ReadMember<object>(entry, "template");
+                    if (!string.Equals(ResolveCardCategory(template), "equipment", StringComparison.Ordinal)) continue;
+                    var name = ResolveTemplateText(template, "itemNameLocalized", "ItemNames", "Name", typeId);
+                    entries.Add(new EquipmentDto
+                    {
+                        typeId = typeId,
+                        name = ResolveChineseName(typeId, name),
+                        iconUrl = GetTemplateIcon(template, typeId)
+                    });
+                }
+            }
+            catch (Exception exception)
+            {
+                UnityEngine.Debug.LogWarning($"[AshesOfPantheonQA] Equipment catalog failed: {exception.Message}");
+            }
+
+            return entries.OrderBy(entry => entry.typeId, StringComparer.Ordinal).ToList();
+        }
+
+        private static string GetTemplateIcon(object template, string typeId)
+        {
+            if (template == null) return null;
+            var cacheKey = "equipment:" + typeId;
+            if (IconCache.TryGetValue(cacheKey, out var cached)) return cached;
+            string icon = null;
+            try
+            {
+                var sprite = ReadMember<Sprite>(template, "cardImage")
+                    ?? ReadMember<Sprite>(template, "icon")
+                    ?? ReadMember<Sprite>(template, "itemIcon");
+                if (sprite != null && sprite.texture != null) icon = EncodeSpriteAtEdge(sprite, EquipmentIconMaxEdge);
+            }
+            catch (Exception exception)
+            {
+                UnityEngine.Debug.LogWarning($"[AshesOfPantheonQA] Equipment icon {typeId} failed: {exception.Message}");
+            }
+
+            if (!string.IsNullOrEmpty(icon)) IconCache[cacheKey] = icon;
+            return icon;
+        }
+
+        private static string EncodeSpriteAtEdge(Sprite sprite, int maxEdge)
+        {
+            if (sprite == null || sprite.texture == null) return null;
+            var rect = sprite.rect;
+            if (rect.width <= 0f || rect.height <= 0f) return null;
+            var scale = Mathf.Min(1f, maxEdge / Mathf.Max(rect.width, rect.height));
+            var width = Mathf.Max(1, Mathf.RoundToInt(rect.width * scale));
+            var height = Mathf.Max(1, Mathf.RoundToInt(rect.height * scale));
+            var renderTexture = RenderTexture.GetTemporary(width, height, 0, RenderTextureFormat.ARGB32);
+            var previous = RenderTexture.active;
+            Texture2D output = null;
+            try
+            {
+                var uvScale = new Vector2(rect.width / sprite.texture.width, rect.height / sprite.texture.height);
+                var uvOffset = new Vector2(rect.x / sprite.texture.width, rect.y / sprite.texture.height);
+                Graphics.Blit(sprite.texture, renderTexture, uvScale, uvOffset);
+                RenderTexture.active = renderTexture;
+                output = new Texture2D(width, height, TextureFormat.RGBA32, false);
+                output.ReadPixels(new Rect(0, 0, width, height), 0, 0);
+                output.Apply();
+                return $"data:image/png;base64,{Convert.ToBase64String(output.EncodeToPNG())}";
+            }
+            catch (Exception exception)
+            {
+                UnityEngine.Debug.LogWarning($"[AshesOfPantheonQA] Sprite icon export failed for {sprite.name}: {exception.Message}");
+                return null;
+            }
+            finally
+            {
+                if (output != null) UnityEngine.Object.DestroyImmediate(output);
+                RenderTexture.active = previous;
+                RenderTexture.ReleaseTemporary(renderTexture);
+            }
+        }
+
+        private List<EnemyDto> GetEnemyCatalogEntries()
+        {
+            var entries = new List<EnemyDto>();
+            try
+            {
+                var registry = GetSingleton("HappyHotel.Enemy.EnemyRegistry");
+                if (registry == null) return entries;
+                Invoke(registry, "Initialize");
+                foreach (var entry in Enumerate(Invoke(registry, "GetAllIndexEntries")))
+                {
+                    var typeId = ReadMember<string>(entry, "TypeId");
+                    if (string.IsNullOrWhiteSpace(typeId)) continue;
+                    var template = ReadMember<object>(entry, "TemplateObject") ?? ReadMember<object>(entry, "template");
+                    entries.Add(new EnemyDto
+                    {
+                        typeId = typeId,
+                        name = ResolveChineseName(typeId, ReadMember<string>(template, "enemyName")),
+                        iconUrl = GetEnemyIcon(template, typeId)
+                    });
+                }
+            }
+            catch (Exception exception)
+            {
+                UnityEngine.Debug.LogWarning($"[AshesOfPantheonQA] Enemy catalog failed: {exception.Message}");
+            }
+
+            return entries.OrderBy(entry => entry.typeId, StringComparer.Ordinal).ToList();
+        }
+
+        private static string GetEnemyIcon(object template, string typeId)
+        {
+            if (template == null) return null;
+            var cacheKey = "enemy:" + typeId;
+            if (IconCache.TryGetValue(cacheKey, out var cached)) return cached;
+            string icon = null;
+            try
+            {
+                var skeletonDataAsset = FindEnemySkeletonDataAsset(template);
+                if (skeletonDataAsset != null && !SkeletonIconCache.TryGetValue(skeletonDataAsset, out icon))
+                {
+                    icon = ComposeSpineIcon(skeletonDataAsset);
+                    if (!string.IsNullOrEmpty(icon)) SkeletonIconCache[skeletonDataAsset] = icon;
+                }
+            }
+            catch (Exception exception)
+            {
+                UnityEngine.Debug.LogWarning($"[AshesOfPantheonQA] Enemy icon {typeId} failed: {exception.Message}");
+            }
+
+            if (!string.IsNullOrEmpty(icon)) IconCache[cacheKey] = icon;
+            return icon;
+        }
+
+        private static object FindEnemySkeletonDataAsset(object template)
+        {
+            var prefab = ReadMember<GameObject>(template, "prefab");
+            if (prefab != null)
+            {
+                var rendererType = FindType("Spine.Unity.SkeletonRenderer");
+                if (rendererType != null)
+                {
+                    foreach (var component in prefab.GetComponentsInChildren(rendererType, true))
+                    {
+                        var asset = ReadMember<object>(component, "skeletonDataAsset");
+                        if (HasSkeletonJson(asset)) return asset;
+                    }
+                }
+
+                var controllerType = FindType("SpineUtil.SpineAnimationController");
+                if (controllerType != null)
+                {
+                    foreach (var component in prefab.GetComponentsInChildren(controllerType, true))
+                    {
+                        var animation = ReadMember<object>(component, "skeletonAnimation") ?? ReadMember<object>(component, "m_skeletonAnimation");
+                        var graphic = ReadMember<object>(component, "skeletonGraphic") ?? ReadMember<object>(component, "m_skeletonGraphic");
+                        var asset = ReadMember<object>(animation, "skeletonDataAsset") ?? ReadMember<object>(graphic, "skeletonDataAsset");
+                        if (HasSkeletonJson(asset)) return asset;
+                    }
+                }
+            }
+
+            foreach (var fieldName in new[] { "resurgenceDown", "resurgenceUp", "resurgenceSide", "defaultSkeletonData" })
+            {
+                var asset = ReadMember<object>(template, fieldName);
+                if (HasSkeletonJson(asset)) return asset;
+            }
+
+            return null;
+        }
+
+        private static bool HasSkeletonJson(object skeletonDataAsset)
+        {
+            var skeletonJson = ReadMember<TextAsset>(skeletonDataAsset, "skeletonJSON");
+            return skeletonJson != null && !string.IsNullOrEmpty(skeletonJson.text);
+        }
+
+        private static string ComposeSpineIcon(object skeletonDataAsset)
+        {
+            var skeletonJson = ReadMember<TextAsset>(skeletonDataAsset, "skeletonJSON")?.text;
+            if (string.IsNullOrWhiteSpace(skeletonJson)) return null;
+            var atlas = GetComposeAtlas(skeletonDataAsset, out var pages, out var textures);
+            if (atlas == null || textures.Count == 0) return null;
+            JObject skeleton;
+            try
+            {
+                skeleton = JObject.Parse(skeletonJson);
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+
+            var boneTokens = skeleton["bones"] as JArray;
+            var slotTokens = skeleton["slots"] as JArray;
+            var attachmentsRoot = ((skeleton["skins"] as JArray)?.OfType<JObject>().FirstOrDefault())?["attachments"] as JObject;
+            if (boneTokens == null || slotTokens == null || attachmentsRoot == null) return null;
+
+            var boneDefinitions = new Dictionary<string, IconBoneDefinition>(StringComparer.Ordinal);
+            var boneOrder = new List<string>();
+            foreach (var token in boneTokens.OfType<JObject>())
+            {
+                var name = token["name"]?.ToString();
+                if (string.IsNullOrEmpty(name) || boneDefinitions.ContainsKey(name)) continue;
+                boneOrder.Add(name);
+                boneDefinitions[name] = new IconBoneDefinition
+                {
+                    parent = token["parent"]?.ToString(),
+                    x = ReadJsonFloat(token["x"]),
+                    y = ReadJsonFloat(token["y"]),
+                    rotation = ReadJsonFloat(token["rotation"]),
+                    scaleX = ReadJsonFloat(token["scaleX"], 1f),
+                    scaleY = ReadJsonFloat(token["scaleY"], 1f)
+                };
+            }
+
+            var boneMatrices = new Dictionary<string, IconMatrix>(StringComparer.Ordinal);
+            Func<string, IconMatrix> resolveBone = null;
+            resolveBone = name =>
+            {
+                if (string.IsNullOrEmpty(name)) return IdentityMatrix();
+                if (boneMatrices.TryGetValue(name, out var cached)) return cached;
+                if (!boneDefinitions.TryGetValue(name, out var definition)) return IdentityMatrix();
+                var local = MakeBoneMatrix(definition);
+                var world = string.IsNullOrEmpty(definition.parent) ? local : MultiplyMatrix(resolveBone(definition.parent), local);
+                boneMatrices[name] = world;
+                return world;
+            };
+
+            var regions = new Dictionary<string, object>(StringComparer.Ordinal);
+            foreach (var region in Enumerate(ReadMember<object>(atlas, "regions")))
+            {
+                var regionName = ReadMember<string>(region, "name");
+                if (!string.IsNullOrEmpty(regionName) && !regions.ContainsKey(regionName)) regions[regionName] = region;
+            }
+
+            var pageSlots = new Dictionary<object, int>();
+            for (var index = 0; index < pages.Count; index++) pageSlots[pages[index]] = index;
+
+            var triangles = new List<IconTriangle>();
+            foreach (var slotToken in slotTokens.OfType<JObject>())
+            {
+                var slotName = slotToken["name"]?.ToString();
+                var slotBoneName = slotToken["bone"]?.ToString();
+                if (string.IsNullOrEmpty(slotName)) continue;
+                var slotAttachments = attachmentsRoot[slotName] as JObject;
+                if (slotAttachments == null || !slotAttachments.HasValues) continue;
+                var attachmentTokenName = slotToken["attachment"]?.ToString();
+                if (string.IsNullOrEmpty(attachmentTokenName)) attachmentTokenName = slotAttachments.Properties().First().Name;
+                var attachment = slotAttachments[attachmentTokenName] as JObject;
+                if (attachment == null) continue;
+                var type = attachment["type"]?.ToString() ?? "region";
+                if (string.Equals(type, "clipping", StringComparison.Ordinal)) continue;
+                var regionName = attachment["path"]?.ToString();
+                if (string.IsNullOrEmpty(regionName)) regionName = attachmentTokenName;
+                if (!regions.TryGetValue(regionName, out var region)) continue;
+                if (ReadMember<bool>(region, "rotate") || ReadMember<int>(region, "degrees") != 0) continue;
+                var pageSlot = 0;
+                var pageObject = ReadMember<object>(region, "page");
+                if (pageObject != null && pageSlots.TryGetValue(pageObject, out var resolvedPageSlot)) pageSlot = resolvedPageSlot;
+                if (pageSlot >= textures.Count || textures[pageSlot] == null) continue;
+                var regionMap = MakeRegionMap(region, textures[pageSlot]);
+                if (!regionMap.valid) continue;
+                if (string.Equals(type, "mesh", StringComparison.Ordinal))
+                {
+                    AddMeshTriangles(attachment, slotBoneName, boneOrder, pageSlot, regionMap, resolveBone, triangles);
+                }
+                else
+                {
+                    AddRegionTriangles(attachment, slotBoneName, pageSlot, regionMap, resolveBone, triangles);
+                }
+            }
+
+            if (triangles.Count == 0) return null;
+            return RasterizeIcon(triangles, textures);
+        }
+
+        private static object GetComposeAtlas(object skeletonDataAsset, out List<object> pages, out List<Texture2D> textures)
+        {
+            pages = new List<object>();
+            textures = new List<Texture2D>();
+            foreach (var atlasAsset in Enumerate(ReadMember<object>(skeletonDataAsset, "atlasAssets")))
+            {
+                if (atlasAsset == null) continue;
+                object atlas = null;
+                try
+                {
+                    atlas = Invoke(atlasAsset, "GetAtlas", false);
+                }
+                catch (Exception)
+                {
+                    atlas = null;
+                }
+
+                if (atlas == null) continue;
+                pages.Clear();
+                textures.Clear();
+                foreach (var page in Enumerate(ReadMember<object>(atlas, "pages")))
+                {
+                    pages.Add(page);
+                    textures.Add(ReadPageTexture(page));
+                }
+
+                if (textures.Exists(texture => texture != null)) return atlas;
+            }
+
+            return null;
+        }
+
+        private static Texture2D ReadPageTexture(object page)
+        {
+            var rendererObject = ReadMember<object>(page, "rendererObject");
+            var material = rendererObject as Material;
+            if (material == null) return rendererObject as Texture2D;
+            return material.mainTexture as Texture2D;
+        }
+
+        private static IconRegionMap MakeRegionMap(object region, Texture2D texture)
+        {
+            var map = new IconRegionMap
+            {
+                u = ReadMember<float>(region, "u"),
+                u2 = ReadMember<float>(region, "u2"),
+                v = ReadMember<float>(region, "v"),
+                v2 = ReadMember<float>(region, "v2")
+            };
+            if (texture == null) return map;
+            var textureHeight = texture.height;
+            var regionY = ReadMember<int>(region, "y");
+            var regionHeight = ReadMember<int>(region, "height");
+            if (regionHeight <= 0) return map;
+            var vAtZero = map.v * textureHeight;
+            var flippedError = Mathf.Abs(vAtZero - (textureHeight - regionY - regionHeight));
+            var straightError = Mathf.Abs(vAtZero - regionY);
+            map.vFromBottom = flippedError <= straightError;
+            map.valid = Mathf.Abs(map.u2 - map.u) > 0.00001f && Mathf.Abs(map.v2 - map.v) > 0.00001f;
+            return map;
+        }
+
+        private static void AddRegionTriangles(JObject attachment, string boneName, int pageSlot, IconRegionMap regionMap, Func<string, IconMatrix> resolveBone, List<IconTriangle> triangles)
+        {
+            var width = ReadJsonFloat(attachment["width"]);
+            var height = ReadJsonFloat(attachment["height"]);
+            if (width <= 0f || height <= 0f) return;
+            var scaleX = ReadJsonFloat(attachment["scaleX"], 1f);
+            var scaleY = ReadJsonFloat(attachment["scaleY"], 1f);
+            var rotation = ReadJsonFloat(attachment["rotation"]) * DegreesToRadians;
+            var cos = (float)System.Math.Cos(rotation);
+            var sin = (float)System.Math.Sin(rotation);
+            var offsetX = ReadJsonFloat(attachment["x"]);
+            var offsetY = ReadJsonFloat(attachment["y"]);
+            var bone = resolveBone(boneName);
+            var left = -width * 0.5f * scaleX;
+            var bottom = -height * 0.5f * scaleY;
+            var right = left + width * scaleX;
+            var top = bottom + height * scaleY;
+
+            TransformIconPoint(left, bottom, cos, sin, offsetX, offsetY, bone, out var bottomLeftX, out var bottomLeftY);
+            TransformIconPoint(left, top, cos, sin, offsetX, offsetY, bone, out var topLeftX, out var topLeftY);
+            TransformIconPoint(right, top, cos, sin, offsetX, offsetY, bone, out var topRightX, out var topRightY);
+            TransformIconPoint(right, bottom, cos, sin, offsetX, offsetY, bone, out var bottomRightX, out var bottomRightY);
+
+            triangles.Add(MakeIconTriangle(bottomLeftX, bottomLeftY, 0f, 0f, topLeftX, topLeftY, 0f, 1f, topRightX, topRightY, 1f, 1f, regionMap, pageSlot));
+            triangles.Add(MakeIconTriangle(bottomLeftX, bottomLeftY, 0f, 0f, topRightX, topRightY, 1f, 1f, bottomRightX, bottomRightY, 1f, 0f, regionMap, pageSlot));
+        }
+
+        private static void AddMeshTriangles(JObject attachment, string boneName, List<string> boneOrder, int pageSlot, IconRegionMap regionMap, Func<string, IconMatrix> resolveBone, List<IconTriangle> triangles)
+        {
+            var uvsToken = attachment["uvs"] as JArray;
+            var verticesToken = attachment["vertices"] as JArray;
+            var indicesToken = attachment["triangles"] as JArray;
+            if (uvsToken == null || verticesToken == null || indicesToken == null) return;
+            var vertexCount = uvsToken.Count / 2;
+            if (vertexCount < 3) return;
+            var positionsX = new float[vertexCount];
+            var positionsY = new float[vertexCount];
+            var valid = false;
+            if (verticesToken.Count == vertexCount * 2)
+            {
+                var bone = resolveBone(boneName);
+                for (var index = 0; index < vertexCount; index++)
+                {
+                    var localX = ReadJsonFloat(verticesToken[index * 2]);
+                    var localY = ReadJsonFloat(verticesToken[index * 2 + 1]);
+                    positionsX[index] = bone.a * localX + bone.c * localY + bone.tx;
+                    positionsY[index] = bone.b * localX + bone.d * localY + bone.ty;
+                }
+
+                valid = true;
+            }
+            else if (verticesToken.Count == vertexCount * 3)
+            {
+                for (var index = 0; index < vertexCount; index++)
+                {
+                    var boneIndex = (int)ReadJsonFloat(verticesToken[index * 3]);
+                    var bone = resolveBone(boneIndex >= 0 && boneIndex < boneOrder.Count ? boneOrder[boneIndex] : boneName);
+                    var localX = ReadJsonFloat(verticesToken[index * 3 + 1]);
+                    var localY = ReadJsonFloat(verticesToken[index * 3 + 2]);
+                    positionsX[index] = bone.a * localX + bone.c * localY + bone.tx;
+                    positionsY[index] = bone.b * localX + bone.d * localY + bone.ty;
+                }
+
+                valid = true;
+            }
+            else
+            {
+                var position = 0;
+                var parsed = true;
+                for (var index = 0; index < vertexCount; index++)
+                {
+                    if (position >= verticesToken.Count)
+                    {
+                        parsed = false;
+                        break;
+                    }
+
+                    var boneCount = (int)ReadJsonFloat(verticesToken[position++]);
+                    var sumX = 0f;
+                    var sumY = 0f;
+                    var sumWeight = 0f;
+                    for (var boneIndex = 0; boneIndex < boneCount; boneIndex++)
+                    {
+                        if (position + 3 >= verticesToken.Count)
+                        {
+                            parsed = false;
+                            break;
+                        }
+
+                        var boneIndexValue = (int)ReadJsonFloat(verticesToken[position++]);
+                        var localX = ReadJsonFloat(verticesToken[position++]);
+                        var localY = ReadJsonFloat(verticesToken[position++]);
+                        var weight = ReadJsonFloat(verticesToken[position++]);
+                        var bone = resolveBone(boneIndexValue >= 0 && boneIndexValue < boneOrder.Count ? boneOrder[boneIndexValue] : boneName);
+                        sumX += weight * (bone.a * localX + bone.c * localY + bone.tx);
+                        sumY += weight * (bone.b * localX + bone.d * localY + bone.ty);
+                        sumWeight += weight;
+                    }
+
+                    if (!parsed) break;
+                    var divisor = sumWeight > 0.0001f ? sumWeight : 1f;
+                    positionsX[index] = sumX / divisor;
+                    positionsY[index] = sumY / divisor;
+                }
+
+                valid = parsed;
+            }
+
+            if (!valid) return;
+            for (var index = 0; index + 2 < indicesToken.Count; index += 3)
+            {
+                var indexA = (int)ReadJsonFloat(indicesToken[index]);
+                var indexB = (int)ReadJsonFloat(indicesToken[index + 1]);
+                var indexC = (int)ReadJsonFloat(indicesToken[index + 2]);
+                if (indexA < 0 || indexB < 0 || indexC < 0) continue;
+                if (indexA >= vertexCount || indexB >= vertexCount || indexC >= vertexCount) continue;
+                triangles.Add(MakeIconTriangle(
+                    positionsX[indexA], positionsY[indexA], ReadJsonFloat(uvsToken[indexA * 2]), ReadJsonFloat(uvsToken[indexA * 2 + 1]),
+                    positionsX[indexB], positionsY[indexB], ReadJsonFloat(uvsToken[indexB * 2]), ReadJsonFloat(uvsToken[indexB * 2 + 1]),
+                    positionsX[indexC], positionsY[indexC], ReadJsonFloat(uvsToken[indexC * 2]), ReadJsonFloat(uvsToken[indexC * 2 + 1]),
+                    regionMap, pageSlot));
+            }
+        }
+
+        private static void TransformIconPoint(float x, float y, float cos, float sin, float offsetX, float offsetY, IconMatrix bone, out float worldX, out float worldY)
+        {
+            var rotatedX = cos * x - sin * y + offsetX;
+            var rotatedY = sin * x + cos * y + offsetY;
+            worldX = bone.a * rotatedX + bone.c * rotatedY + bone.tx;
+            worldY = bone.b * rotatedX + bone.d * rotatedY + bone.ty;
+        }
+
+        private static IconTriangle MakeIconTriangle(float x0, float y0, float u0, float v0, float x1, float y1, float u1, float v1, float x2, float y2, float u2, float v2, IconRegionMap regionMap, int pageSlot)
+        {
+            return new IconTriangle
+            {
+                ax = x0,
+                ay = y0,
+                au = regionMap.SampleU(u0),
+                av = regionMap.SampleV(v0),
+                bx = x1,
+                by = y1,
+                bu = regionMap.SampleU(u1),
+                bv = regionMap.SampleV(v1),
+                cx = x2,
+                cy = y2,
+                cu = regionMap.SampleU(u2),
+                cv = regionMap.SampleV(v2),
+                page = pageSlot
+            };
+        }
+
+        private static string RasterizeIcon(List<IconTriangle> triangles, List<Texture2D> textures)
+        {
+            var minX = float.MaxValue;
+            var minY = float.MaxValue;
+            var maxX = float.MinValue;
+            var maxY = float.MinValue;
+            foreach (var triangle in triangles)
+            {
+                minX = Mathf.Min(minX, Mathf.Min(triangle.ax, Mathf.Min(triangle.bx, triangle.cx)));
+                maxX = Mathf.Max(maxX, Mathf.Max(triangle.ax, Mathf.Max(triangle.bx, triangle.cx)));
+                minY = Mathf.Min(minY, Mathf.Min(triangle.ay, Mathf.Min(triangle.by, triangle.cy)));
+                maxY = Mathf.Max(maxY, Mathf.Max(triangle.ay, Mathf.Max(triangle.by, triangle.cy)));
+            }
+
+            var worldWidth = maxX - minX;
+            var worldHeight = maxY - minY;
+            if (worldWidth <= 0.5f || worldHeight <= 0.5f) return null;
+            const int supersample = 2;
+            var scale = EnemyIconMaxEdge * supersample / Mathf.Max(worldWidth, worldHeight);
+            if (scale <= 0f || float.IsInfinity(scale)) return null;
+            var pixelWidth = Mathf.Max(1, (int)System.Math.Ceiling(worldWidth * scale));
+            var pixelHeight = Mathf.Max(1, (int)System.Math.Ceiling(worldHeight * scale));
+            var rgb = new float[pixelWidth * pixelHeight * 3];
+            var alpha = new float[pixelWidth * pixelHeight];
+            var pixelCache = new Dictionary<int, Color32[]>();
+            foreach (var triangle in triangles)
+            {
+                if (triangle.page < 0 || triangle.page >= textures.Count) continue;
+                var texture = textures[triangle.page];
+                if (texture == null) continue;
+                Color32[] pixels;
+                if (!pixelCache.TryGetValue(triangle.page, out pixels))
+                {
+                    pixels = GetTexturePixels(texture);
+                    pixelCache[triangle.page] = pixels;
+                }
+
+                if (pixels == null) continue;
+                var ax = (triangle.ax - minX) * scale;
+                var ay = (maxY - triangle.ay) * scale;
+                var bx = (triangle.bx - minX) * scale;
+                var by = (maxY - triangle.by) * scale;
+                var cx = (triangle.cx - minX) * scale;
+                var cy = (maxY - triangle.cy) * scale;
+                var denominator = (bx - ax) * (cy - ay) - (cx - ax) * (by - ay);
+                if (Mathf.Abs(denominator) < 0.0001f) continue;
+                var minRow = Mathf.Max(0, (int)System.Math.Floor(Mathf.Min(ay, Mathf.Min(by, cy))));
+                var maxRow = Mathf.Min(pixelHeight - 1, (int)System.Math.Ceiling(Mathf.Max(ay, Mathf.Max(by, cy))));
+                var minColumn = Mathf.Max(0, (int)System.Math.Floor(Mathf.Min(ax, Mathf.Min(bx, cx))));
+                var maxColumn = Mathf.Min(pixelWidth - 1, (int)System.Math.Ceiling(Mathf.Max(ax, Mathf.Max(bx, cx))));
+                var textureWidth = texture.width;
+                var textureHeight = texture.height;
+                for (var row = minRow; row <= maxRow; row++)
+                {
+                    for (var column = minColumn; column <= maxColumn; column++)
+                    {
+                        var sampleX = column + 0.5f;
+                        var sampleY = row + 0.5f;
+                        var weightB = ((sampleX - ax) * (cy - ay) - (cx - ax) * (sampleY - ay)) / denominator;
+                        var weightC = ((bx - ax) * (sampleY - ay) - (sampleX - ax) * (by - ay)) / denominator;
+                        var weightA = 1f - weightB - weightC;
+                        if (weightA < -0.0001f || weightB < -0.0001f || weightC < -0.0001f) continue;
+                        var sampleU = weightA * triangle.au + weightB * triangle.bu + weightC * triangle.cu;
+                        var sampleV = weightA * triangle.av + weightB * triangle.bv + weightC * triangle.cv;
+                        var texelX = ClampInt((int)(sampleU * textureWidth), 0, textureWidth - 1);
+                        var texelY = ClampInt((int)(sampleV * textureHeight), 0, textureHeight - 1);
+                        var source = pixels[texelY * textureWidth + texelX];
+                        var sourceAlpha = source.a / 255f;
+                        if (sourceAlpha <= 0f) continue;
+                        var pixelIndex = row * pixelWidth + column;
+                        var destination = pixelIndex * 3;
+                        var sourceRed = source.r / 255f * sourceAlpha;
+                        var sourceGreen = source.g / 255f * sourceAlpha;
+                        var sourceBlue = source.b / 255f * sourceAlpha;
+                        var remain = 1f - sourceAlpha;
+                        rgb[destination] = sourceRed + rgb[destination] * remain;
+                        rgb[destination + 1] = sourceGreen + rgb[destination + 1] * remain;
+                        rgb[destination + 2] = sourceBlue + rgb[destination + 2] * remain;
+                        alpha[pixelIndex] = sourceAlpha + alpha[pixelIndex] * remain;
+                    }
+                }
+            }
+
+            var finalWidth = Mathf.Max(1, pixelWidth / supersample);
+            var finalHeight = Mathf.Max(1, pixelHeight / supersample);
+            var colors = new Color32[finalWidth * finalHeight];
+            for (var row = 0; row < finalHeight; row++)
+            {
+                for (var column = 0; column < finalWidth; column++)
+                {
+                    var sumRed = 0f;
+                    var sumGreen = 0f;
+                    var sumBlue = 0f;
+                    var sumAlpha = 0f;
+                    var samples = 0;
+                    for (var subRow = 0; subRow < supersample; subRow++)
+                    {
+                        var sourceRow = row * supersample + subRow;
+                        if (sourceRow >= pixelHeight) continue;
+                        for (var subColumn = 0; subColumn < supersample; subColumn++)
+                        {
+                            var sourceColumn = column * supersample + subColumn;
+                            if (sourceColumn >= pixelWidth) continue;
+                            var index = sourceRow * pixelWidth + sourceColumn;
+                            sumRed += rgb[index * 3];
+                            sumGreen += rgb[index * 3 + 1];
+                            sumBlue += rgb[index * 3 + 2];
+                            sumAlpha += alpha[index];
+                            samples++;
+                        }
+                    }
+
+                    if (samples == 0) continue;
+                    var averageAlpha = sumAlpha / samples;
+                    var color = new Color32();
+                    if (averageAlpha > 0.001f)
+                    {
+                        color.r = ToByte(sumRed / samples / averageAlpha);
+                        color.g = ToByte(sumGreen / samples / averageAlpha);
+                        color.b = ToByte(sumBlue / samples / averageAlpha);
+                        color.a = ToByte(averageAlpha);
+                    }
+
+                    colors[(finalHeight - 1 - row) * finalWidth + column] = color;
+                }
+            }
+
+            Texture2D output = null;
+            try
+            {
+                output = new Texture2D(finalWidth, finalHeight, TextureFormat.RGBA32, false);
+                output.SetPixels32(colors);
+                output.Apply();
+                return $"data:image/png;base64,{Convert.ToBase64String(output.EncodeToPNG())}";
+            }
+            catch (Exception exception)
+            {
+                UnityEngine.Debug.LogWarning($"[AshesOfPantheonQA] Enemy icon raster failed: {exception.Message}");
+                return null;
+            }
+            finally
+            {
+                if (output != null) UnityEngine.Object.DestroyImmediate(output);
+            }
+        }
+
+        private static Color32[] GetTexturePixels(Texture2D texture)
+        {
+            if (texture == null) return null;
+            if (TexturePixelCache.TryGetValue(texture, out var cached)) return cached;
+            Color32[] pixels = null;
+            var previous = RenderTexture.active;
+            RenderTexture renderTexture = null;
+            Texture2D readable = null;
+            try
+            {
+                renderTexture = RenderTexture.GetTemporary(texture.width, texture.height, 0, RenderTextureFormat.ARGB32);
+                Graphics.Blit(texture, renderTexture);
+                RenderTexture.active = renderTexture;
+                readable = new Texture2D(texture.width, texture.height, TextureFormat.RGBA32, false);
+                readable.ReadPixels(new Rect(0, 0, texture.width, texture.height), 0, 0);
+                readable.Apply();
+                pixels = readable.GetPixels32();
+            }
+            catch (Exception exception)
+            {
+                UnityEngine.Debug.LogWarning($"[AshesOfPantheonQA] Texture read failed: {exception.Message}");
+            }
+            finally
+            {
+                if (readable != null) UnityEngine.Object.DestroyImmediate(readable);
+                RenderTexture.active = previous;
+                if (renderTexture != null) RenderTexture.ReleaseTemporary(renderTexture);
+            }
+
+            if (pixels != null) TexturePixelCache[texture] = pixels;
+            return pixels;
+        }
+
+        private static IconMatrix IdentityMatrix()
+        {
+            return new IconMatrix { a = 1f, d = 1f };
+        }
+
+        private static IconMatrix MakeBoneMatrix(IconBoneDefinition definition)
+        {
+            var radians = definition.rotation * DegreesToRadians;
+            var cos = (float)System.Math.Cos(radians);
+            var sin = (float)System.Math.Sin(radians);
+            return new IconMatrix
+            {
+                a = cos * definition.scaleX,
+                b = sin * definition.scaleX,
+                c = -sin * definition.scaleY,
+                d = cos * definition.scaleY,
+                tx = definition.x,
+                ty = definition.y
+            };
+        }
+
+        private static IconMatrix MultiplyMatrix(IconMatrix parent, IconMatrix local)
+        {
+            return new IconMatrix
+            {
+                a = parent.a * local.a + parent.c * local.b,
+                b = parent.b * local.a + parent.d * local.b,
+                c = parent.a * local.c + parent.c * local.d,
+                d = parent.b * local.c + parent.d * local.d,
+                tx = parent.a * local.tx + parent.c * local.ty + parent.tx,
+                ty = parent.b * local.tx + parent.d * local.ty + parent.ty
+            };
+        }
+
+        private static float ReadJsonFloat(JToken token, float fallback = 0f)
+        {
+            if (token == null) return fallback;
+            try
+            {
+                return token.Value<float>();
+            }
+            catch (Exception)
+            {
+                return fallback;
+            }
+        }
+
+        private static int ClampInt(int value, int minimum, int maximum)
+        {
+            if (value < minimum) return minimum;
+            return value > maximum ? maximum : value;
+        }
+
+        private static byte ToByte(float value)
+        {
+            return (byte)ClampInt((int)System.Math.Round(value * 255f), 0, 255);
         }
 
         private sealed class CardDto

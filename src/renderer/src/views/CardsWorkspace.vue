@@ -1,12 +1,14 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { ArrowDownAZ, ArrowUpAZ, MousePointer2, Search, X } from '@lucide/vue'
 import CardTile from '@/components/CardTile.vue'
 import { useQaStore } from '@/stores/qa'
+import { isUpgradedCard } from '@shared/catalog'
 import type { CardCategory, QaCard, Rarity } from '@shared/contracts'
 
 const store = useQaStore()
 const pendingCardTypeId = ref('')
+const versionTotal = computed(() => store.catalog.cards.filter((card) => isUpgradedCard(card.typeId) === store.showUpgradedOnly).length)
 
 async function obtainCard(card: QaCard): Promise<void> {
   if (card.category === 'equipment') {
@@ -91,6 +93,18 @@ const rarities: Array<{ value: Rarity; label: string }> = [
 
     <div class="game-filters flex shrink-0 flex-wrap items-start gap-x-6 gap-y-3 border-b border-white/8 bg-[#171619] px-6 py-3" role="group" aria-labelledby="card-filter-label">
       <span id="card-filter-label" class="flex h-7 items-center text-[12px] font-semibold text-white/65">筛选</span>
+
+      <fieldset class="flex flex-wrap items-center gap-2">
+        <legend class="float-left mr-2 text-[11px] font-bold text-white/42">版本</legend>
+        <label
+          class="flex h-7 cursor-pointer items-center gap-1.5 border border-white/10 px-2 text-[11px] text-white/58 has-[:checked]:border-[#c6a451]/48 has-[:checked]:bg-[#c6a451]/9 has-[:checked]:text-[#edcf70]"
+          title="不打勾只显示普通版；打勾只显示升级版（+）"
+        >
+          <input v-model="store.showUpgradedOnly" class="checkbox checkbox-xs checkbox-primary" type="checkbox" name="card-upgraded" />
+          升级版
+        </label>
+      </fieldset>
+
       <fieldset class="flex flex-wrap items-center gap-2">
         <legend class="float-left mr-2 text-[11px] font-bold text-white/42">类型</legend>
         <label v-for="item in categories" :key="item.value" class="flex h-7 cursor-pointer items-center gap-1.5 border border-white/10 px-2 text-[11px] text-white/58 has-[:checked]:border-[#c6a451]/48 has-[:checked]:bg-[#c6a451]/9 has-[:checked]:text-[#edcf70]">
@@ -131,7 +145,7 @@ const rarities: Array<{ value: Rarity; label: string }> = [
 
     <div class="min-h-0 flex-1 overflow-y-auto px-6 py-5">
       <div class="mb-4 flex flex-wrap items-center justify-between gap-2 text-[11px] text-white/45">
-        <span>显示 {{ store.filteredCards.length }} / {{ store.catalog.cards.length }}</span>
+        <span>显示 {{ store.filteredCards.length }} / {{ versionTotal }}</span>
         <span v-if="store.connectionStatus === 'connected' && store.cardInventoryAvailable" class="flex items-center gap-1.5 text-white/65" title="装备卡左键前往战斗放置，右键删除战场装备">
           <MousePointer2 :size="13" aria-hidden="true" />左键获取 · 右键删除
         </span>

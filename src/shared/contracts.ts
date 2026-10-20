@@ -106,9 +106,18 @@ export interface QaBattleSnapshot {
   routePreview?: QaRoutePreview
 }
 
+export interface QaCatalogSpriteEntry {
+  typeId: string
+  name: string
+  /** Game-provided PNG data URL of the entity's real in-game art. */
+  iconUrl?: string
+}
+
 export interface QaCatalog {
   cards: QaCard[]
-  equipment: Array<{ typeId: string; name: string }>
+  equipment: QaCatalogSpriteEntry[]
+  /** Battle enemies with their real in-game art; older bridges omit it. */
+  enemies?: QaCatalogSpriteEntry[]
   buffs: Array<{ typeId: string; name: string; description: string; supportsStacks: boolean; supportsDuration: boolean }>
   blessings: Array<{ typeId: string; name: string; description: string }>
   intents: Array<{ typeId: string; name: string; description: string; parameters: string[] }>
