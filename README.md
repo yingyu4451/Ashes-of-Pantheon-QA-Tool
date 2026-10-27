@@ -2,6 +2,8 @@
 
 面向《Ashes of Pantheon》的桌面 QA 工作台。前端使用 Electron、Vue 3、daisyUI 5、Tailwind CSS 4 与 GSAP。
 
+界面字体统一为小米 MiSans（npm 包 `misans` 内置可变字体，正文 400、标题 600），按小米许可在此注明使用了 MiSans 字体，不再包含字魂字体。
+
 完整操作步骤见 [使用说明](docs/usage.md)。工具顶部问号打开应用内离线说明弹窗，ZIP 根目录也附带 `USAGE.md`。右下角操作提示仅显示一次，并在 2 秒后消失。
 
 ## 当前能力

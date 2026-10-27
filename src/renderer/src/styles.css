@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "misans/lib/Normal/MiSansVF.min.css";
 @plugin "daisyui" {
   themes: false;
   logs: false;
@@ -37,17 +38,12 @@
   --noise: 0;
 }
 
-@font-face {
-  font-family: "Ashes Display";
-  src: url("./assets/fonts/Font_NieTuFangTi.ttf") format("truetype");
-  font-display: swap;
-}
-
 :root {
   color-scheme: dark;
   color: #e8e2d7;
   background: #121112;
-  font-family: "Microsoft YaHei UI", "Noto Sans SC", sans-serif;
+  font-family: "MiSans VF", "Microsoft YaHei UI", "Noto Sans SC", sans-serif;
+  font-weight: 400;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   --ink: #121112;
@@ -126,8 +122,14 @@ select:focus-visible,
 }
 
 .display-font {
-  font-family: "Ashes Display", "Microsoft YaHei UI", sans-serif;
+  font-family: "MiSans VF", "Microsoft YaHei UI", sans-serif;
+  font-weight: 600;
   text-shadow: 0 2px 1px #090808;
+}
+
+/* MiSans 700 reads heavier than the previous system bold; keep one shared heading weight. */
+.ashes-shell :is(h1, h2, h3, h4) {
+  font-weight: 600;
 }
 
 .utility-font {
