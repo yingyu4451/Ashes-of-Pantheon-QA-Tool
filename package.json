@@ -1,6 +1,6 @@
 {
   "name": "ashes-of-pantheon-qa-tool",
-  "version": "0.1.19",
+  "version": "0.1.20",
   "packageManager": "pnpm@11.25.0",
   "private": true,
   "description": "Ashes of Pantheon runtime QA workstation",
@@ -27,7 +27,6 @@
     "fflate": "^0.8.3",
     "gsap": "^3.15.0",
     "marked": "^18.1.1",
-    "misans": "^5.0.0",
     "pinia": "^4.1.0",
     "vue": "^3.5.44"
   },
@@ -42,6 +41,7 @@
     "electron": "^44.9.2",
     "electron-builder": "^26.15.3",
     "electron-vite": "^6.0.0",
+    "misans": "^5.0.0",
     "tailwindcss": "^4.3.3",
     "typescript": "^5.9.3",
     "vite": "^8.3.4",
