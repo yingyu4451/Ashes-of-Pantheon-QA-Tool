@@ -48,6 +48,8 @@ describe('release contract', () => {
     expect(workflow).toContain('release/artifacts/update.json')
     expect(workflow).toContain('release-previous')
     expect(workflow).toContain('$index.deltas')
+    expect(workflow).toContain('$index.patches')
+    expect(workflow).toContain("'*-win-x64.zip'")
     expect(workflow).not.toContain('release/latest.yml')
     expect(workflow).not.toContain('.blockmap')
     expect(workflow).not.toContain('-Setup-')

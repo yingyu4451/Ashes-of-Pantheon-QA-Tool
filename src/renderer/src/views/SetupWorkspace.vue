@@ -371,7 +371,7 @@ onUnmounted(() => {
                 当前 <span translate="no">v{{ store.updateStatus.currentVersion }}</span>
                 <template v-if="store.updateStatus.latestVersion"> · 最新 <span translate="no">v{{ store.updateStatus.latestVersion }}</span></template>
               </p>
-              <p v-if="store.updateStatus.mode" class="m-0 mt-1 text-[10px] text-[#67b49e]">{{ store.updateStatus.mode === 'delta' ? '增量 ZIP' : '完整 ZIP' }}</p>
+              <p v-if="store.updateStatus.mode" class="m-0 mt-1 text-[10px] text-[#67b49e]">{{ store.updateStatus.mode === 'patch' ? '增量补丁' : store.updateStatus.mode === 'delta' ? '增量 ZIP' : '完整 ZIP' }}</p>
             </div>
             <span class="border border-white/12 px-2 py-1 text-[9px] text-white/40">{{ updatePhaseLabels[store.updateStatus.phase] }}</span>
           </div>

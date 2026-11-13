@@ -93,7 +93,7 @@ export function createUpdateCoordinator(options: UpdateCoordinatorOptions): Upda
       }
       publish({ ...status, phase: 'downloading', percent: 0, message: '正在验证本地版本并准备下载…' })
       try {
-        await driver.download(latestRelease, (progress) => publish({ ...status, ...progress, phase: 'downloading', message: (progress.percent ?? 0) >= 100 ? '下载完成，正在校验并暂存…' : progress.mode === 'delta' ? '正在下载增量 ZIP…' : '正在下载完整 ZIP…' }))
+        await driver.download(latestRelease, (progress) => publish({ ...status, ...progress, phase: 'downloading', message: (progress.percent ?? 0) >= 100 ? '下载完成，正在校验并暂存…' : progress.mode === 'patch' ? '正在下载增量补丁…' : progress.mode === 'delta' ? '正在下载增量 ZIP…' : '正在下载完整 ZIP…' }))
         publish({ ...status, phase: 'downloaded', percent: 100, message: '更新已校验，等待重启。' })
         return { ok: true, message: status.message, data: copyStatus(status) }
       } catch (error) {

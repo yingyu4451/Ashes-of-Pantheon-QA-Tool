@@ -1,11 +1,12 @@
 import { mkdtemp, mkdir, readFile, writeFile, symlink } from 'node:fs/promises'
+import { randomBytes } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { execFile, spawn } from 'node:child_process'
 import { setTimeout as delay } from 'node:timers/promises'
 import { promisify } from 'node:util'
 import { describe, expect, it } from 'vitest'
-import { buildPortableRelease, stagePortableUpdate, validateManifest } from '../../src/main/portableArchive'
+import { buildPortableRelease, stagePortableUpdate, validateManifest, validateRelease } from '../../src/main/portableArchive'
 
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'qa-zip-test-'))
@@ -39,6 +40,165 @@ describe('ZIP portable release', () => {
     expect(await readFile(join(staged.stageDir, 'app.txt'), 'utf8')).toBe('new')
     expect(await readFile(join(app, 'my-notes.txt'), 'utf8')).toBe('keep')
     expect(await readFile(join(app, 'app.txt'), 'utf8')).toBe('old')
+  })
+
+  it('stages a block patch for a large file in a nested directory', async () => {
+    const { root, app } = await fixture()
+    const asar = randomBytes(640_000)
+    await mkdir(join(app, 'resources'))
+    await writeFile(join(app, 'resources', 'app.asar'), asar)
+    const first = await buildPortableRelease(app, join(root, 'v1'), '1.0.0', 'QA.exe')
+    await writeFile(join(app, 'update-manifest.json'), JSON.stringify(first.manifest))
+    const next = join(root, 'next')
+    await mkdir(join(next, 'resources'), { recursive: true })
+    const shifted = Buffer.concat([asar.subarray(0, 90_000), randomBytes(4_000), asar.subarray(90_000)])
+    await writeFile(join(next, 'QA.exe'), 'runtime-unchanged')
+    await writeFile(join(next, 'app.txt'), 'old')
+    await writeFile(join(next, 'resources', 'app.asar'), shifted)
+    const second = await buildPortableRelease(next, join(root, 'v2'), '1.0.1', 'QA.exe', first, [{ release: first, directory: app }])
+    expect(second.patches).toHaveLength(1)
+    const fetched: string[] = []
+    const staged = await stagePortableUpdate({
+      directory: app, stagingRoot: join(root, 'stage'), currentVersion: '1.0.0', release: second,
+      download: async (asset) => { fetched.push(asset.name); return readFile(join(root, 'v2', asset.name)) }
+    })
+    expect(staged.mode).toBe('patch')
+    expect(fetched).toEqual([second.patches![0]!.name])
+    expect(staged.changed).toEqual(['resources/app.asar'])
+    expect(new Uint8Array(await readFile(join(staged.stageDir, 'resources', 'app.asar')))).toEqual(new Uint8Array(shifted))
+  }, 45_000)
+
+  it('stages a block patch against the previous release when large files shift', async () => {
+    const { root, app } = await fixture()
+    const runtime = randomBytes(700_000)
+    await writeFile(join(app, 'QA.exe'), runtime)
+    const first = await buildPortableRelease(app, join(root, 'v1'), '1.0.0', 'QA.exe')
+    await writeFile(join(app, 'update-manifest.json'), JSON.stringify(first.manifest))
+    const next = join(root, 'next')
+    await mkdir(next)
+    const shifted = Buffer.concat([runtime.subarray(0, 120_000), randomBytes(3_000), runtime.subarray(120_000)])
+    await writeFile(join(next, 'QA.exe'), shifted)
+    await writeFile(join(next, 'app.txt'), 'new')
+    const second = await buildPortableRelease(next, join(root, 'v2'), '1.0.1', 'QA.exe', first, [{ release: first, directory: app }])
+    expect(second.patches).toHaveLength(1)
+    const patch = second.patches![0]!
+    expect(patch.name).toBe('Ashes-of-Pantheon-QA-Tool-1.0.1-win-x64-from-1.0.0.patch.zip')
+    expect(patch.size).toBeLessThan(second.full.size / 4)
+    const fetched: string[] = []
+    const staged = await stagePortableUpdate({
+      directory: app, stagingRoot: join(root, 'stage'), currentVersion: '1.0.0', release: second,
+      download: async (asset) => { fetched.push(asset.name); return readFile(join(root, 'v2', asset.name)) }
+    })
+    expect(staged.mode).toBe('patch')
+    expect(fetched).toEqual([patch.name])
+    expect(staged.changed).toEqual(['app.txt', 'QA.exe'])
+    expect(new Uint8Array(await readFile(join(staged.stageDir, 'QA.exe')))).toEqual(new Uint8Array(shifted))
+    expect(await readFile(join(staged.stageDir, 'app.txt'), 'utf8')).toBe('new')
+  }, 45_000)
+
+  it('falls back to the file delta when the patch bundle is corrupt', async () => {
+    const { root, app } = await fixture()
+    const runtime = randomBytes(700_000)
+    await writeFile(join(app, 'QA.exe'), runtime)
+    const first = await buildPortableRelease(app, join(root, 'v1'), '1.0.0', 'QA.exe')
+    await writeFile(join(app, 'update-manifest.json'), JSON.stringify(first.manifest))
+    const next = join(root, 'next')
+    await mkdir(next)
+    await writeFile(join(next, 'QA.exe'), Buffer.concat([runtime.subarray(0, 100_000), randomBytes(2_000), runtime.subarray(100_000)]))
+    await writeFile(join(next, 'app.txt'), 'new')
+    const second = await buildPortableRelease(next, join(root, 'v2'), '1.0.1', 'QA.exe', first, [{ release: first, directory: app }])
+    const fetched: string[] = []
+    const staged = await stagePortableUpdate({
+      directory: app, stagingRoot: join(root, 'stage'), currentVersion: '1.0.0', release: second,
+      download: async (asset) => { fetched.push(asset.name); return asset.name.endsWith('.patch.zip') ? Buffer.from('corrupt') : readFile(join(root, 'v2', asset.name)) }
+    })
+    expect(staged.mode).toBe('delta')
+    expect(fetched).toEqual([second.patches![0]!.name, second.deltas[0]!.name])
+    expect(await readFile(join(staged.stageDir, 'app.txt'), 'utf8')).toBe('new')
+  }, 45_000)
+
+  it('falls back to the full ZIP when patch and delta are both corrupt', async () => {
+    const { root, app } = await fixture()
+    const runtime = randomBytes(700_000)
+    await writeFile(join(app, 'QA.exe'), runtime)
+    const first = await buildPortableRelease(app, join(root, 'v1'), '1.0.0', 'QA.exe')
+    await writeFile(join(app, 'update-manifest.json'), JSON.stringify(first.manifest))
+    const next = join(root, 'next')
+    await mkdir(next)
+    await writeFile(join(next, 'QA.exe'), Buffer.concat([runtime.subarray(0, 60_000), randomBytes(1_500), runtime.subarray(60_000)]))
+    await writeFile(join(next, 'app.txt'), 'new')
+    const second = await buildPortableRelease(next, join(root, 'v2'), '1.0.1', 'QA.exe', first, [{ release: first, directory: app }])
+    const fetched: string[] = []
+    const staged = await stagePortableUpdate({
+      directory: app, stagingRoot: join(root, 'stage'), currentVersion: '1.0.0', release: second,
+      download: async (asset) => { fetched.push(asset.name); return asset.name.includes('from-') ? Buffer.from('corrupt') : readFile(join(root, 'v2', asset.name)) }
+    })
+    expect(staged.mode).toBe('full')
+    expect(fetched.at(-1)).toBe(second.full.name)
+    expect(fetched).toHaveLength(3)
+    expect(await readFile(join(staged.stageDir, 'app.txt'), 'utf8')).toBe('new')
+  }, 45_000)
+
+  it('serves the patch that matches the installed base when several bases are published', async () => {
+    const { root, app } = await fixture()
+    const runtime = randomBytes(700_000)
+    await writeFile(join(app, 'QA.exe'), runtime)
+    const first = await buildPortableRelease(app, join(root, 'v1'), '1.0.0', 'QA.exe')
+    await writeFile(join(app, 'update-manifest.json'), JSON.stringify(first.manifest))
+    const secondDir = join(root, 'second')
+    await mkdir(secondDir)
+    const shifted = Buffer.concat([runtime.subarray(0, 150_000), randomBytes(2_500), runtime.subarray(150_000)])
+    await writeFile(join(secondDir, 'QA.exe'), shifted)
+    await writeFile(join(secondDir, 'app.txt'), 'new')
+    const second = await buildPortableRelease(secondDir, join(root, 'v2'), '1.0.1', 'QA.exe', first)
+    const thirdDir = join(root, 'third')
+    await mkdir(thirdDir)
+    await writeFile(join(thirdDir, 'QA.exe'), Buffer.concat([shifted.subarray(0, 300_000), randomBytes(2_000), shifted.subarray(300_000)]))
+    await writeFile(join(thirdDir, 'app.txt'), 'newer')
+    const third = await buildPortableRelease(thirdDir, join(root, 'v3'), '1.0.2', 'QA.exe', second, [
+      { release: second, directory: secondDir },
+      { release: first, directory: app }
+    ])
+    expect(third.patches).toHaveLength(2)
+    const fetched: string[] = []
+    const staged = await stagePortableUpdate({
+      directory: app, stagingRoot: join(root, 'stage'), currentVersion: '1.0.0', release: third,
+      download: async (asset) => { fetched.push(asset.name); return readFile(join(root, 'v3', asset.name)) }
+    })
+    expect(staged.mode).toBe('patch')
+    expect(fetched[0]).toContain('-from-1.0.0.patch.zip')
+    expect(await readFile(join(staged.stageDir, 'app.txt'), 'utf8')).toBe('newer')
+  }, 60_000)
+
+  it('applies a staged patch with the Windows helper', async () => {
+    const { root, app } = await fixture()
+    const runtime = randomBytes(700_000)
+    await writeFile(join(app, 'QA.exe'), runtime)
+    const first = await buildPortableRelease(app, join(root, 'v1'), '1.0.0', 'QA.exe')
+    await writeFile(join(app, 'update-manifest.json'), JSON.stringify(first.manifest))
+    const next = join(root, 'next')
+    await mkdir(next)
+    const shifted = Buffer.concat([runtime.subarray(0, 200_000), randomBytes(2_000), runtime.subarray(200_000)])
+    await writeFile(join(next, 'QA.exe'), shifted)
+    await writeFile(join(next, 'app.txt'), 'new')
+    const second = await buildPortableRelease(next, join(root, 'v2'), '1.0.1', 'QA.exe', first, [{ release: first, directory: app }])
+    const plan = await stagePortableUpdate({
+      directory: app, stagingRoot: join(root, 'stage'), currentVersion: '1.0.0', release: second,
+      download: (asset) => readFile(join(root, 'v2', asset.name))
+    })
+    expect(plan.mode).toBe('patch')
+    const planPath = join(plan.stageDir, 'plan.json')
+    await writeFile(planPath, JSON.stringify({ ...plan, parentPid: 0 }))
+    await promisify(execFile)('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', 'resources/updater/apply-update.ps1', '-PlanPath', planPath, '-NoLaunch'])
+    expect(new Uint8Array(await readFile(join(app, 'QA.exe')))).toEqual(new Uint8Array(shifted))
+    expect(await readFile(join(app, 'app.txt'), 'utf8')).toBe('new')
+    expect(JSON.parse(await readFile(join(app, 'update-manifest.json'), 'utf8')).version).toBe('1.0.1')
+  }, 45_000)
+
+  it('rejects a patch asset that is not a patch bundle', () => {
+    const manifest = { schema: 1 as const, version: '1.0.1', platform: 'win32-x64' as const, entry: 'QA.exe', files: { 'QA.exe': { size: 1, sha256: 'a'.repeat(64) } } }
+    const release = { schema: 1 as const, version: '1.0.1', manifest, full: { name: 'full.zip', size: 1, sha256: 'a'.repeat(64) }, deltas: [] }
+    expect(() => validateRelease({ ...release, patches: [{ name: 'full.zip', size: 1, sha256: 'a'.repeat(64), fromVersion: '1.0.0', fromManifestSha256: 'a'.repeat(64) }] })).toThrow()
   })
 
   it('applies a full ZIP with the Windows helper and preserves unowned files', async () => {

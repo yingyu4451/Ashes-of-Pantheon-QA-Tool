@@ -35,10 +35,12 @@ await writeFile(join(userData, 'settings.json'), '{"test":"preserved"}')
 const nextIndexPath = join(root, 'next-release', 'update.json')
 const cached = existsSync(nextIndexPath) ? JSON.parse(await readFile(nextIndexPath, 'utf8')) : undefined
 console.log('Preparing the next-version ZIP fixture')
-const next = cached?.version === nextVersion && cached.deltas.some((asset) => asset.fromManifestSha256 === sha256(JSON.stringify(release.manifest))) ? cached : await buildPortableRelease('release/smoke-next/win-unpacked', join(root, 'next-release'), nextVersion, release.manifest.entry, release)
+const next = cached?.version === nextVersion && cached.patches?.some((asset) => asset.fromManifestSha256 === sha256(JSON.stringify(release.manifest)))
+  ? cached
+  : await buildPortableRelease('release/smoke-next/win-unpacked', join(root, 'next-release'), nextVersion, release.manifest.entry, release, [{ release, directory }])
 const server = createServer((request, response) => {
   const name = decodeURIComponent((request.url || '').slice(1))
-  if (![next.full, ...next.deltas].some((asset) => asset.name === name)) { response.writeHead(404).end(); return }
+  if (![next.full, ...next.deltas, ...(next.patches ?? [])].some((asset) => asset.name === name)) { response.writeHead(404).end(); return }
   createReadStream(join(root, 'next-release', name)).pipe(response)
 })
 await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
@@ -55,10 +57,10 @@ try {
     const originalFetch = net.fetch.bind(net)
     net.fetch = async (input) => {
       const url = String(input)
-      if (url.endsWith('/releases/latest')) return new Response(JSON.stringify({ tag_name: `v${index.version}`, assets: [{ name: 'update.json' }, index.full, ...index.deltas] }))
+      if (url.endsWith('/releases/latest')) return new Response(JSON.stringify({ tag_name: `v${index.version}`, assets: [{ name: 'update.json' }, index.full, ...index.deltas, ...(index.patches ?? [])] }))
       if (url.endsWith('/update.json')) return new Response(JSON.stringify(index))
       const name = decodeURIComponent(new URL(url).pathname.split('/').pop())
-      if (![index.full, ...index.deltas].some((asset) => asset.name === name)) throw new Error(`Unexpected test request: ${url}`)
+      if (![index.full, ...index.deltas, ...(index.patches ?? [])].some((asset) => asset.name === name)) throw new Error(`Unexpected test request: ${url}`)
       return originalFetch(`${baseUrl}/${encodeURIComponent(name)}`)
     }
   }, { index: next, baseUrl })
@@ -69,8 +71,8 @@ try {
   const downloaded = await page.evaluate(() => window.qaNative.downloadUpdate())
   assert.equal(downloaded.ok, true, downloaded.message)
   assert.equal(downloaded.data.phase, 'downloaded')
-  assert.equal(downloaded.data.mode, 'delta')
-  console.log('Delta downloaded and verified; requesting restart')
+  assert.equal(downloaded.data.mode, 'patch')
+  console.log(`Block patch downloaded and verified (${next.patches[0].size} bytes); requesting restart`)
   await page.getByRole('heading', { name: '应用更新' }).scrollIntoViewIfNeeded()
   await page.screenshot({ path: resolve('test-results/zip-packaged-ready.png') })
   const restarted = await page.evaluate(() => window.qaNative.restartForUpdate())
@@ -96,7 +98,7 @@ try {
     await delay(500)
   }
   assert.equal(relaunched, true, 'Updated EXE must relaunch with the new product version')
-  console.log(JSON.stringify({ fullBytes: next.full.size, deltaBytes: next.deltas[0].size, mode: downloaded.data.mode, previous: release.version, updated: next.version, relaunched, preservedUserData: true, root }, null, 2))
+  console.log(JSON.stringify({ fullBytes: next.full.size, patchBytes: next.patches[0].size, mode: downloaded.data.mode, previous: release.version, updated: next.version, relaunched, preservedUserData: true, root }, null, 2))
 } finally {
   if (!closed) await app.close()
   server.close()

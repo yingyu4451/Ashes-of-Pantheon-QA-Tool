@@ -53,6 +53,15 @@ describe('ZIP update coordinator', () => {
     expect((await coordinator.restart()).ok).toBe(false)
     expect((await coordinator.check()).ok).toBe(true)
   })
+  it('describes a block patch download before staging', async () => {
+    const { coordinator, driver } = fixture()
+    const messages: string[] = []
+    coordinator.subscribe((status) => messages.push(status.message))
+    driver.download = async (_release, progress) => { progress({ percent: 10, transferred: 1, total: 10, mode: 'patch' }) }
+    await coordinator.check()
+    expect((await coordinator.download()).ok).toBe(true)
+    expect(messages).toContain('正在下载增量补丁…')
+  })
   it('reports check errors and skips releases at or below the current version', async () => {
     const { coordinator, release, driver } = fixture()
     release.version = '0.1.4'

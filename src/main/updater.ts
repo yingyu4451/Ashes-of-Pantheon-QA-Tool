@@ -6,7 +6,7 @@ import { promisify } from 'node:util'
 import { app, BrowserWindow, ipcMain, net } from 'electron'
 import type { UpdateStatus } from '../shared/contracts.js'
 import { createUpdateCoordinator, type UpdateProgress } from './updateCoordinator.js'
-import { stagePortableUpdate, validateRelease, type PortableRelease, type StagedUpdate, type UpdateAsset } from './portableArchive.js'
+import { stagePortableUpdate, validateRelease, type PortableRelease, type StagedUpdate, type UpdateAsset, type UpdateMode } from './portableArchive.js'
 
 const repository = 'yingyu4451/Ashes-of-Pantheon-QA-Tool'
 const updateStatusChannel = 'update:status'
@@ -92,7 +92,7 @@ async function getLatestRelease(): Promise<PortableRelease> {
   }
   const index = validateRelease(await fetchJson(target.href) as PortableRelease)
   if (index.version !== version) throw new Error('GitHub 更新清单与正式版本不一致。请稍后重新检查更新。')
-  for (const asset of [index.full, ...index.deltas]) {
+  for (const asset of [index.full, ...index.deltas, ...(index.patches ?? [])]) {
     const assetResponse = await net.fetch(assetUrl(version, asset.name), {
       method: 'HEAD', cache: 'no-store', signal: AbortSignal.timeout(30_000)
     })
@@ -102,7 +102,7 @@ async function getLatestRelease(): Promise<PortableRelease> {
   return index
 }
 
-async function downloadAsset(version: string, asset: UpdateAsset, mode: 'full' | 'delta', progress: (value: UpdateProgress) => void): Promise<Uint8Array> {
+async function downloadAsset(version: string, asset: UpdateAsset, mode: UpdateMode, progress: (value: UpdateProgress) => void): Promise<Uint8Array> {
   const response = await net.fetch(assetUrl(version, asset.name), { signal: AbortSignal.timeout(30 * 60_000) })
   if (!response.ok) {
     await response.body?.cancel()

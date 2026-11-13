@@ -175,7 +175,7 @@ export interface OperationResult<T = undefined> {
 }
 
 export interface UpdateStatus {
-  mode?: 'full' | 'delta'
+  mode?: 'full' | 'delta' | 'patch'
   phase: UpdatePhase
   currentVersion: string
   latestVersion?: string
